@@ -96,9 +96,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func notchHovered() {
         guard !panel.isVisible else { return }
         showPanelBelowNotch()
-        NSApp.activate(ignoringOtherApps: true)
-        // Set flag AFTER show — makeKeyAndOrderFront synchronously fires
-        // didBecomeKeyNotification, which would clear this flag if set before.
         panelOpenedViaHover = true
         startHoverTracking()
         sessionStore.detectAndSwitchAsync()

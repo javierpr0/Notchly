@@ -1,5 +1,7 @@
 import AppKit
 import SwiftUI
+
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var panel: TerminalPanel!

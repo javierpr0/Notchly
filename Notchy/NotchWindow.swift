@@ -523,7 +523,7 @@ enum NotchDisplayState: Equatable {
     case taskCompleted
 
     /// Hierarchy: .taskCompleted (always shown) > .waitingForInput > .working > .idle
-    static var current: NotchDisplayState {
+    @MainActor static var current: NotchDisplayState {
         let sessions = SessionStore.shared.sessions
         if sessions.contains(where: { $0.terminalStatus == .taskCompleted }) {
             return .taskCompleted

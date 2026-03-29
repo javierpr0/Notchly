@@ -6,6 +6,8 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     private var keyMonitor: Any?
     private var clickMonitor: Any?
     private var statusDebounceTimer: Timer?
+    var isInitializing = false
+    private var dataReceivedCount = 0
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -145,6 +147,18 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
 
         guard let id = sessionId else { return }
 
+        // Reveal terminal after shell init + clear completes
+        if isInitializing {
+            dataReceivedCount += 1
+            if dataReceivedCount >= 4 {
+                isInitializing = false
+                DispatchQueue.main.async {
+                    self.alphaValue = 1
+                }
+            }
+            return
+        }
+
         // Debounce status checks — the buffer can be mid-render when
         // dataReceived fires, causing transient misreads that flicker
         // between .working and .idle.
@@ -233,6 +247,10 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
             environment: environment,
             execName: "-" + (shell as NSString).lastPathComponent
         )
+
+        // Hide terminal until cd && clear finishes (revealed in dataReceived)
+        terminal.alphaValue = 0
+        terminal.isInitializing = true
 
         // cd to working directory, launch claude only if CLAUDE.md exists
         let escapedDir = shellEscape(workingDirectory)

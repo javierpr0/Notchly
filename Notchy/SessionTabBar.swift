@@ -124,12 +124,34 @@ struct SessionTab: View {
     var onMoveRight: (() -> Void)?
 
     @State private var isHovering = false
-    @State private var showRenameDialog = false
+    @State private var isRenaming = false
     @State private var renameText = ""
     @State private var latestCheckpoint: Checkpoint?
     @State private var showRestoreConfirmation = false
+    @FocusState private var renameFieldFocused: Bool
 
     private var name: String { session.projectName }
+
+    private func startRename() {
+        renameText = name
+        isRenaming = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            renameFieldFocused = true
+        }
+    }
+
+    private func commitRename() {
+        isRenaming = false
+        let trimmed = renameText.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty && trimmed != name {
+            onRename(trimmed)
+        }
+    }
+
+    private func cancelRename() {
+        isRenaming = false
+        renameText = name
+    }
 
     private func refreshLatestCheckpoint() {
         guard let dir = session.projectPath else { return }
@@ -163,16 +185,25 @@ struct SessionTab: View {
             statusIndicator
 
             ZStack {
-                // Hidden semibold text prevents tab width change on selection
                 Text(name)
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(1)
                     .opacity(0)
 
-                Text(name)
-                    .font(.system(size: 11, weight: isActive ? .semibold : .regular))
-                    .lineLimit(1)
-                    .foregroundColor(.white.opacity(foregroundOpacity))
+                if isRenaming {
+                    TextField("", text: $renameText, onCommit: commitRename)
+                        .font(.system(size: 11, weight: .semibold))
+                        .textFieldStyle(.plain)
+                        .multilineTextAlignment(.center)
+                        .focused($renameFieldFocused)
+                        .onExitCommand { cancelRename() }
+                        .frame(minWidth: 40)
+                } else {
+                    Text(name)
+                        .font(.system(size: 11, weight: isActive ? .semibold : .regular))
+                        .lineLimit(1)
+                        .foregroundColor(.white.opacity(foregroundOpacity))
+                }
             }
         }
         .padding(.horizontal, 10)
@@ -195,6 +226,9 @@ struct SessionTab: View {
                 NSCursor.pop()
             }
         }
+        .onTapGesture(count: 2) {
+            startRename()
+        }
         .onTapGesture(perform: onSelect)
         .contextMenu {
             if session.projectPath != nil {
@@ -211,10 +245,6 @@ struct SessionTab: View {
                 Divider()
             }
 
-            Button("Restart") {
-                SessionStore.shared.restartSession(session.id)
-            }
-
             if canMoveLeft {
                 Button("Move Left") {
                     onMoveLeft?()
@@ -229,8 +259,11 @@ struct SessionTab: View {
             Divider()
 
             Button("Rename Tab") {
-                renameText = name
-                showRenameDialog = true
+                startRename()
+            }
+
+            Button("Restart") {
+                SessionStore.shared.restartSession(session.id)
             }
 
             Button("Close", role: .destructive) {
@@ -257,20 +290,16 @@ struct SessionTab: View {
         } message: {
             Text("This will overwrite your current working directory with the checkpoint. Are you sure?")
         }
-        .alert("Rename Tab", isPresented: $showRenameDialog) {
-            TextField("Tab name", text: $renameText)
-            Button("Rename") {
-                if !renameText.isEmpty {
-                    onRename(renameText)
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        }
-        .onChange(of: showRenameDialog) {
-            SessionStore.shared.isShowingDialog = showRenameDialog || showRestoreConfirmation
+        .onChange(of: isRenaming) {
+            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation
         }
         .onChange(of: showRestoreConfirmation) {
-            SessionStore.shared.isShowingDialog = showRenameDialog || showRestoreConfirmation
+            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation
+        }
+        .onChange(of: renameFieldFocused) {
+            if !renameFieldFocused && isRenaming {
+                commitRename()
+            }
         }
     }
 }

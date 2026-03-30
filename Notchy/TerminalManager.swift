@@ -222,6 +222,16 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
 class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
     static let shared = TerminalManager()
 
+    private static let fontSizeKey = "terminalFontSize"
+    private static let defaultFontSize: CGFloat = 11
+    private static let minFontSize: CGFloat = 9
+    private static let maxFontSize: CGFloat = 24
+
+    var fontSize: CGFloat {
+        let saved = CGFloat(UserDefaults.standard.double(forKey: Self.fontSizeKey))
+        return saved > 0 ? saved : Self.defaultFontSize
+    }
+
     private var terminals: [UUID: LocalProcessTerminalView] = [:]
 
     func terminal(for sessionId: UUID, workingDirectory: String, launchClaude: Bool = true) -> LocalProcessTerminalView {
@@ -233,7 +243,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         terminal.sessionId = sessionId
         terminal.processDelegate = self
 
-        terminal.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        terminal.font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         terminal.nativeBackgroundColor = NSColor(white: 0.1, alpha: 1.0)
         terminal.nativeForegroundColor = NSColor(white: 0.9, alpha: 1.0)
 
@@ -297,6 +307,23 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
     func visibleText(for sessionId: UUID) -> String? {
         guard let terminal = terminals[sessionId] as? ClickThroughTerminalView else { return nil }
         return terminal.extractVisibleText()
+    }
+
+    func increaseFontSize() { changeFontSize(by: 1) }
+    func decreaseFontSize() { changeFontSize(by: -1) }
+    func resetFontSize() { setFontSize(Self.defaultFontSize) }
+
+    private func changeFontSize(by delta: CGFloat) {
+        setFontSize(fontSize + delta)
+    }
+
+    private func setFontSize(_ size: CGFloat) {
+        let clamped = max(Self.minFontSize, min(Self.maxFontSize, size))
+        UserDefaults.standard.set(Double(clamped), forKey: Self.fontSizeKey)
+        let font = NSFont.monospacedSystemFont(ofSize: clamped, weight: .regular)
+        for terminal in terminals.values {
+            terminal.font = font
+        }
     }
 
     func focusTerminal(for paneId: UUID) {

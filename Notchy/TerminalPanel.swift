@@ -247,6 +247,19 @@ class TerminalPanel: NSPanel {
             }
             return true
         }
+        // Cmd+ / Cmd- / Cmd+0 → font size
+        if mods == .command && (chars == "+" || chars == "=") {
+            TerminalManager.shared.increaseFontSize()
+            return true
+        }
+        if mods == .command && chars == "-" {
+            TerminalManager.shared.decreaseFontSize()
+            return true
+        }
+        if mods == .command && chars == "0" {
+            TerminalManager.shared.resetFontSize()
+            return true
+        }
         // Cmd+Shift+Left/Right → move active tab
         if mods == [.command, .shift] {
             if event.keyCode == 123, let id = sessionStore.activeSessionId {

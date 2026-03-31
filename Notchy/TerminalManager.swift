@@ -9,6 +9,14 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     var isInitializing = false
     private var dataReceivedCount = 0
 
+    // Autocomplete state
+    private var autocompleteDebounceTimer: Timer?
+    private var lastPromptInput: String = ""
+    private var currentWorkingDir: String?
+    private var ghostView: GhostTextView?
+    private var currentGhostSuggestion: String?
+    private static let promptCharacters: Set<Character> = ["$", "%", ">"]
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override init(frame: NSRect) {
@@ -51,14 +59,41 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
 
     /// Intercept arrow key events locally and send standard VT100/xterm sequences
     /// to avoid kitty keyboard protocol (CSI u) encoding issues.
+    /// Also handles autocomplete overlay navigation.
     private func installArrowKeyMonitor() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self, self.window?.firstResponder === self else { return event }
+
+            // Ghost text: Tab accepts full suggestion, Right arrow accepts it too
+            if self.currentGhostSuggestion != nil {
+                let mods = event.modifierFlags.intersection([.shift, .option, .control, .command])
+
+                // Tab → accept full ghost suggestion
+                if event.keyCode == 48 && mods.isEmpty {
+                    self.acceptGhostSuggestion()
+                    return nil
+                }
+                // Right arrow (no mods) → accept full ghost suggestion
+                if event.keyCode == 124 && mods.isEmpty {
+                    self.acceptGhostSuggestion()
+                    return nil
+                }
+                // Esc → dismiss ghost text
+                if event.keyCode == 53 {
+                    self.clearGhostText()
+                    return nil
+                }
+            }
 
             // Shift+Enter → send newline sequence for Claude Code multiline input
             if event.keyCode == 36 && event.modifierFlags.contains(.shift) {
                 self.send(txt: "\u{1b}[13;2u")
                 return nil
+            }
+
+            // Enter without overlay — record the command being executed
+            if event.keyCode == 36 {
+                self.recordCurrentCommand()
             }
 
             let arrowCode: String?
@@ -167,6 +202,9 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
             guard let self else { return }
             self.evaluateStatus(for: id)
         }
+
+        // Trigger autocomplete evaluation
+        triggerAutocomplete()
     }
 
     private func evaluateStatus(for id: UUID) {
@@ -217,6 +255,178 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
             return line.contains("…")
         }
     }
+
+    // MARK: - Autocomplete (Ghost Text)
+
+    func setWorkingDirectory(_ dir: String) {
+        currentWorkingDir = dir
+        CommandStore.shared.importHistoryIfNeeded(for: dir)
+    }
+
+    private func ensureGhostView() {
+        guard ghostView == nil else { return }
+        let gv = GhostTextView(frame: .zero)
+        gv.font = font ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        addSubview(gv)
+        ghostView = gv
+    }
+
+    private func triggerAutocomplete() {
+        autocompleteDebounceTimer?.invalidate()
+        autocompleteDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: false) { [weak self] _ in
+            self?.evaluateAutocomplete()
+        }
+    }
+
+    private func evaluateAutocomplete() {
+        guard let dir = currentWorkingDir else { return }
+        guard let input = extractPromptInput() else {
+            clearGhostText()
+            lastPromptInput = ""
+            return
+        }
+
+        guard input != lastPromptInput else { return }
+        lastPromptInput = input
+
+        guard input.count >= 2 else {
+            clearGhostText()
+            return
+        }
+
+        let suggestions = AutocompleteEngine.shared.suggestions(for: input, in: dir)
+        guard let best = suggestions.first else {
+            clearGhostText()
+            return
+        }
+
+        showGhostText(full: best.command, typed: input)
+    }
+
+    private func showGhostText(full command: String, typed input: String) {
+        ensureGhostView()
+        guard let gv = ghostView else { return }
+
+        // Show only the remaining part of the command after what's typed
+        let remaining: String
+        if command.lowercased().hasPrefix(input.lowercased()) {
+            remaining = String(command.dropFirst(input.count))
+        } else {
+            // Fuzzy match — show full command
+            remaining = "  " + command
+        }
+
+        guard !remaining.trimmingCharacters(in: .whitespaces).isEmpty else {
+            clearGhostText()
+            return
+        }
+
+        currentGhostSuggestion = command
+        gv.font = font ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        gv.ghostText = remaining
+
+        // Position at cursor
+        let terminal = getTerminal()
+        let cursor = terminal.getCursorLocation()
+        guard terminal.cols > 0, terminal.rows > 0 else { return }
+
+        let scrollerWidth = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .overlay)
+        let contentWidth = frame.width - scrollerWidth
+        let cellWidth = contentWidth / CGFloat(terminal.cols)
+        let cellHeight = frame.height / CGFloat(terminal.rows)
+
+        let x = cellWidth * CGFloat(cursor.x)
+        // AppKit coordinates: y=0 is bottom, so invert
+        let y = frame.height - cellHeight * CGFloat(cursor.y + 1)
+
+        let size = gv.intrinsicContentSize
+        gv.frame = NSRect(x: x, y: y, width: size.width, height: cellHeight)
+    }
+
+    private func clearGhostText() {
+        currentGhostSuggestion = nil
+        lastPromptInput = ""
+        ghostView?.ghostText = ""
+    }
+
+    private func acceptGhostSuggestion() {
+        guard let command = currentGhostSuggestion,
+              let input = lastPromptInput.nilIfEmpty else {
+            clearGhostText()
+            return
+        }
+
+        clearGhostText()
+
+        // Send only the remaining characters
+        if command.lowercased().hasPrefix(input.lowercased()) {
+            let remaining = String(command.dropFirst(input.count))
+            send(txt: remaining)
+        } else {
+            // Fuzzy match: delete input first, then type full command
+            let backspaces = String(repeating: "\u{7f}", count: input.count)
+            send(txt: backspaces + command)
+        }
+
+        if let dir = currentWorkingDir {
+            CommandStore.shared.recordCommand(command, in: dir)
+        }
+    }
+
+    /// Extracts the text the user is typing at the current shell prompt.
+    /// Returns nil if not at a shell prompt.
+    private func extractPromptInput() -> String? {
+        let terminal = getTerminal()
+        let cursor = terminal.getCursorLocation()
+
+        // Read the cursor row
+        var line = ""
+        for col in 0..<terminal.cols {
+            let ch = terminal.getCharacter(col: col, row: cursor.y) ?? " "
+            line.append(ch == "\u{0}" ? " " : ch)
+        }
+        let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+        guard !trimmedLine.isEmpty else { return nil }
+
+        // Don't autocomplete inside Claude (look for Claude's prompt character)
+        if trimmedLine.contains("❯") { return nil }
+
+        // Find the last prompt character in the line before cursor position
+        var promptEnd: Int? = nil
+        for i in stride(from: min(cursor.x, terminal.cols - 1), through: 0, by: -1) {
+            let ch = terminal.getCharacter(col: i, row: cursor.y) ?? " "
+            if Self.promptCharacters.contains(ch) {
+                promptEnd = i
+                break
+            }
+        }
+
+        guard let pe = promptEnd else { return nil }
+
+        // Extract text after prompt character + space
+        let inputStart = pe + 2 // prompt char + space
+        guard inputStart < cursor.x else { return nil }
+
+        var input = ""
+        for col in inputStart..<cursor.x {
+            let ch = terminal.getCharacter(col: col, row: cursor.y) ?? " "
+            input.append(ch == "\u{0}" ? " " : ch)
+        }
+
+        let trimmed = input.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func recordCurrentCommand() {
+        guard let dir = currentWorkingDir,
+              let input = extractPromptInput(),
+              input.count >= 2 else { return }
+        CommandStore.shared.recordCommand(input, in: dir)
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
@@ -242,6 +452,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         let terminal = ClickThroughTerminalView(frame: NSRect(x: 0, y: 0, width: 720, height: 460))
         terminal.sessionId = sessionId
         terminal.processDelegate = self
+        terminal.setWorkingDirectory(workingDirectory)
 
         terminal.font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         terminal.nativeBackgroundColor = NSColor(white: 0.1, alpha: 1.0)
@@ -297,6 +508,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         } else {
             path = dir
         }
+        terminal.setWorkingDirectory(path)
         Task { @MainActor in
             SessionStore.shared.updateWorkingDirectory(sessionId, directory: path)
         }

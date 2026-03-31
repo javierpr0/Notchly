@@ -143,12 +143,21 @@ class SessionStore {
         persistSessions()
     }
 
-    /// Select a tab — auto-starts the terminal
+    /// Select a tab — auto-starts the terminal and clears taskCompleted indicators
     func selectSession(_ id: UUID) {
         activeSessionId = id
         if let index = sessions.firstIndex(where: { $0.id == id }) {
             sessions[index].hasBeenSelected = true
             startSessionIfNeeded(id)
+
+            // Clear taskCompleted status on all panes when user opens the tab
+            for paneId in sessions[index].paneStatuses.keys {
+                if sessions[index].paneStatuses[paneId] == .taskCompleted {
+                    sessions[index].paneStatuses[paneId] = .idle
+                }
+            }
+            NotificationCenter.default.post(name: .NotchyNotchStatusChanged, object: nil)
+
             // Expand terminal if collapsed when user taps a tab
             if !isTerminalExpanded {
                 isTerminalExpanded = true
@@ -254,10 +263,6 @@ class SessionStore {
                     return
                 }
                 self.updateTerminalStatus(paneId, status: .taskCompleted)
-                try? await Task.sleep(for: .seconds(3))
-                guard let idx2 = self.sessions.firstIndex(where: { $0.id == sessionId }),
-                      self.sessions[idx2].paneStatuses[paneId] == .taskCompleted else { return }
-                self.updateTerminalStatus(paneId, status: .idle)
             }
         }
     }

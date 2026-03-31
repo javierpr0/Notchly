@@ -18,6 +18,7 @@ class CommandStore {
         return home.appendingPathComponent(".notchly/commands")
     }()
 
+    private let queue = DispatchQueue(label: "com.notchly.CommandStore")
     private var cache: [String: [StoredCommand]] = [:]
     private var historyImported = false
 
@@ -28,51 +29,67 @@ class CommandStore {
     // MARK: - Public API
 
     func commands(for directory: String) -> [StoredCommand] {
+        queue.sync { _commands(for: directory) }
+    }
+
+    func recordCommand(_ command: String, in directory: String) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            var cmds = self._commands(for: directory)
+            if let idx = cmds.firstIndex(where: { $0.text == command }) {
+                cmds[idx].count += 1
+                cmds[idx].lastUsed = Date()
+            } else {
+                cmds.append(StoredCommand(text: command, count: 1, lastUsed: Date()))
+            }
+            self.cache[directory] = cmds
+            self.saveCommands(cmds, for: directory)
+        }
+    }
+
+    func importHistoryIfNeeded(for directory: String) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            guard !self.historyImported else { return }
+            self.historyImported = true
+            let existingCmds = self._commands(for: directory)
+
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                guard let self else { return }
+
+                var cmds = existingCmds
+                let existingTexts = Set(cmds.map(\.text))
+
+                // Seed with common default commands if this is a fresh directory
+                if cmds.isEmpty {
+                    for cmd in Self.defaultCommands where !existingTexts.contains(cmd) {
+                        cmds.append(StoredCommand(text: cmd, count: 1, lastUsed: Date.distantPast))
+                    }
+                }
+
+                // Import zsh history
+                let historyCommands = self.readZshHistory()
+                let updatedTexts = Set(cmds.map(\.text))
+                for cmd in historyCommands where !updatedTexts.contains(cmd) {
+                    cmds.append(StoredCommand(text: cmd, count: 1, lastUsed: Date.distantPast))
+                }
+
+                self.queue.async { [weak self] in
+                    guard let self else { return }
+                    self.cache[directory] = cmds
+                    self.saveCommands(cmds, for: directory)
+                }
+            }
+        }
+    }
+
+    // MARK: - Private (call only from within queue)
+
+    private func _commands(for directory: String) -> [StoredCommand] {
         if let cached = cache[directory] { return cached }
         let loaded = loadCommands(for: directory)
         cache[directory] = loaded
         return loaded
-    }
-
-    func recordCommand(_ command: String, in directory: String) {
-        var cmds = commands(for: directory)
-        if let idx = cmds.firstIndex(where: { $0.text == command }) {
-            cmds[idx].count += 1
-            cmds[idx].lastUsed = Date()
-        } else {
-            cmds.append(StoredCommand(text: command, count: 1, lastUsed: Date()))
-        }
-        cache[directory] = cmds
-        saveCommands(cmds, for: directory)
-    }
-
-    func importHistoryIfNeeded(for directory: String) {
-        guard !historyImported else { return }
-        historyImported = true
-
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let self else { return }
-
-            var cmds = self.commands(for: directory)
-            let existingTexts = Set(cmds.map(\.text))
-
-            // Seed with common default commands if this is a fresh directory
-            if cmds.isEmpty {
-                for cmd in Self.defaultCommands where !existingTexts.contains(cmd) {
-                    cmds.append(StoredCommand(text: cmd, count: 1, lastUsed: Date.distantPast))
-                }
-            }
-
-            // Import zsh history
-            let historyCommands = self.readZshHistory()
-            let updatedTexts = Set(cmds.map(\.text))
-            for cmd in historyCommands where !updatedTexts.contains(cmd) {
-                cmds.append(StoredCommand(text: cmd, count: 1, lastUsed: Date.distantPast))
-            }
-
-            self.cache[directory] = cmds
-            self.saveCommands(cmds, for: directory)
-        }
     }
 
     // MARK: - Private

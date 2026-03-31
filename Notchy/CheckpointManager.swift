@@ -113,6 +113,11 @@ class CheckpointManager {
         try git(["update-ref", refName, commit], in: projectDirectory)
     }
 
+    /// Returns true if the directory is inside a git repository
+    func isGitRepo(in directory: String) -> Bool {
+        (try? git(["rev-parse", "--git-dir"], in: directory)) != nil
+    }
+
     /// Lists all checkpoints for a project, newest first
     func checkpoints(for projectName: String, in projectDirectory: String) -> [Checkpoint] {
         let refPattern = "\(refPrefix)/\(projectName)/"

@@ -3,8 +3,8 @@ import SwiftUI
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
-    private var statusItem: NSStatusItem!
-    private var panel: TerminalPanel!
+    private let statusItem: NSStatusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private lazy var panel: TerminalPanel = TerminalPanel(sessionStore: sessionStore)
     private var notchWindow: NotchWindow?
     private let sessionStore = SessionStore.shared
     private var hoverHideTimer: Timer?
@@ -27,6 +27,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        stopHoverTracking()
         sessionStore.saveSessions()
         UserDefaults.standard.synchronize()
         if let monitor = hotkeyMonitor {
@@ -45,7 +46,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
             button.image = NSImage(named: "menuIcon") //NSImage(systemSymbolName: "terminal", accessibilityDescription: "Notchy")
             button.image?.isTemplate = true  // lets macOS handle light/dark mode
@@ -56,7 +56,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupPanel() {
-        panel = TerminalPanel(sessionStore: sessionStore)
         // When the panel hides for any reason, clean up hover tracking
         NotificationCenter.default.addObserver(
             forName: NSWindow.didResignKeyNotification,
@@ -233,60 +232,66 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
 
         // Checkpoint section
-//        let eligibleSessions = sessionStore.checkpointEligibleSessions
-//        if !eligibleSessions.isEmpty {
-//            menu.addItem(.separator())
-//
-//            let headingItem = NSMenuItem(title: "Checkpoint", action: nil, keyEquivalent: "")
-//            headingItem.isEnabled = false
-//            menu.addItem(headingItem)
-//
-//            let saveItem = NSMenuItem(
-//                title: "Save...",
-//                action: nil,
-//                keyEquivalent: ""
-//            )
-//            let saveMenu = NSMenu()
-//            for session in eligibleSessions {
-//                let item = NSMenuItem(
-//                    title: session.projectName,
-//                    action: #selector(createCheckpoint(_:)),
-//                    keyEquivalent: ""
-//                )
-//                item.target = self
-//                item.representedObject = session.id
-//                saveMenu.addItem(item)
-//            }
-//            saveItem.submenu = saveMenu
-//            menu.addItem(saveItem)
-//
-//            let restoreItem = NSMenuItem(
-//                title: "Restore from…",
-//                action: nil,
-//                keyEquivalent: ""
-//            )
-//            let restoreMenu = NSMenu()
-//            for session in eligibleSessions {
-//                guard let dir = session.projectPath else { continue }
-//                let projectDir = (dir as NSString).deletingLastPathComponent
-//                let hasCheckpoint = !CheckpointManager.shared.checkpoints(for: session.projectName, in: projectDir).isEmpty
-//                guard hasCheckpoint else { continue }
-//                let item = NSMenuItem(
-//                    title: session.projectName,
-//                    action: #selector(restoreLastCheckpoint(_:)),
-//                    keyEquivalent: ""
-//                )
-//                item.target = self
-//                item.representedObject = session.id
-//                restoreMenu.addItem(item)
-//            }
-//            if restoreMenu.items.count > 0 {
-//                restoreItem.submenu = restoreMenu
-//                menu.addItem(restoreItem)
-//            }
-//        }
+        let eligibleSessions = sessionStore.checkpointEligibleSessions
+        if !eligibleSessions.isEmpty {
+            menu.addItem(.separator())
 
-//        menu.addItem(.separator())
+            let headingItem = NSMenuItem(title: "Checkpoint", action: nil, keyEquivalent: "")
+            headingItem.isEnabled = false
+            menu.addItem(headingItem)
+
+            let saveItem = NSMenuItem(
+                title: "Save...",
+                action: nil,
+                keyEquivalent: ""
+            )
+            let saveMenu = NSMenu()
+            for session in eligibleSessions {
+                let item = NSMenuItem(
+                    title: session.projectName,
+                    action: #selector(createCheckpoint(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = session.id
+                if let dir = session.projectPath {
+                    let projectDir = (dir as NSString).deletingLastPathComponent
+                    item.isEnabled = CheckpointManager.shared.isGitRepo(in: projectDir)
+                } else {
+                    item.isEnabled = false
+                }
+                saveMenu.addItem(item)
+            }
+            saveItem.submenu = saveMenu
+            menu.addItem(saveItem)
+
+            let restoreItem = NSMenuItem(
+                title: "Restore from…",
+                action: nil,
+                keyEquivalent: ""
+            )
+            let restoreMenu = NSMenu()
+            for session in eligibleSessions {
+                guard let dir = session.projectPath else { continue }
+                let projectDir = (dir as NSString).deletingLastPathComponent
+                let hasCheckpoint = !CheckpointManager.shared.checkpoints(for: session.projectName, in: projectDir).isEmpty
+                guard hasCheckpoint else { continue }
+                let item = NSMenuItem(
+                    title: session.projectName,
+                    action: #selector(restoreLastCheckpoint(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = session.id
+                restoreMenu.addItem(item)
+            }
+            if restoreMenu.items.count > 0 {
+                restoreItem.submenu = restoreMenu
+                menu.addItem(restoreItem)
+            }
+        }
+
+        menu.addItem(.separator())
 
         let quitItem = NSMenuItem(
             title: "Quit Notchly",

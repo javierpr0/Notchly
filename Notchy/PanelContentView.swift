@@ -50,11 +50,6 @@ struct PanelContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Black top border — separate element so it pushes content down
-            Rectangle()
-                .fill(Color.black)
-                .frame(height: 10)
-
             // Top bar: tabs + controls
             HStack(spacing: 8) {
 
@@ -129,7 +124,7 @@ struct PanelContentView: View {
                 .padding(.trailing, -10)
             }
             .padding(.horizontal, 12)
-            .background(Color(nsColor: NSColor(white: 0.14, alpha: 1.0)).opacity(chromeBackgroundOpacity))
+            .background(Color(nsColor: NSColor(white: 0.12, alpha: 1.0)).opacity(chromeBackgroundOpacity))
 
             if sessionStore.isTerminalExpanded, sessionStore.checkpointStatus != nil || sessionStore.lastCheckpoint != nil {
                 HStack(spacing: 6) {

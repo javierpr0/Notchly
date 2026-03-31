@@ -175,8 +175,8 @@ struct SessionTab: View {
                 .foregroundColor(.green)
         case .idle, .interrupted:
             Circle()
-                .fill(Color.gray.opacity(0.4))
-                .frame(width: 6, height: 6)
+                .fill(Color.white.opacity(0.2))
+                .frame(width: 5, height: 5)
         }
     }
 
@@ -200,9 +200,9 @@ struct SessionTab: View {
                         .frame(minWidth: 40)
                 } else {
                     Text(name)
-                        .font(.system(size: 11, weight: isActive ? .semibold : .regular))
+                        .font(.system(size: 11, weight: isActive ? .medium : .regular))
                         .lineLimit(1)
-                        .foregroundColor(.white.opacity(foregroundOpacity))
+                        .foregroundColor(.white.opacity(isActive ? foregroundOpacity : foregroundOpacity * 0.6))
                 }
             }
 
@@ -221,14 +221,10 @@ struct SessionTab: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: 5)
                 .fill(isActive
-                    ? Color.accentColor.opacity(0.15)
+                    ? Color.white.opacity(0.1)
                     : isHovering ? Color.white.opacity(0.05) : Color.clear)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(isActive ? Color.accentColor.opacity(0.3) : Color.clear, lineWidth: 1)
         )
         .onHover { hovering in
             isHovering = hovering

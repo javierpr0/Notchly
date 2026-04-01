@@ -5,6 +5,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     var sessionId: UUID?
     private var keyMonitor: Any?
     private var clickMonitor: Any?
+    private var rightClickMonitor: Any?
     private var statusDebounceTimer: Timer?
     var isInitializing = false
     private var dataReceivedCount = 0
@@ -24,6 +25,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         registerForDraggedTypes([.fileURL])
         installArrowKeyMonitor()
         installClickMonitor()
+        installRightClickMonitor()
     }
 
     required init?(coder: NSCoder) {
@@ -31,6 +33,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         registerForDraggedTypes([.fileURL])
         installArrowKeyMonitor()
         installClickMonitor()
+        installRightClickMonitor()
     }
 
     deinit {
@@ -38,6 +41,9 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
             NSEvent.removeMonitor(monitor)
         }
         if let monitor = clickMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = rightClickMonitor {
             NSEvent.removeMonitor(monitor)
         }
     }
@@ -422,6 +428,153 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
               let input = extractPromptInput(),
               input.count >= 2 else { return }
         CommandStore.shared.recordCommand(input, in: dir)
+    }
+
+    // MARK: - Command Blocks (Copy Output)
+
+    private struct CommandBlock {
+        let promptRow: Int
+        let outputStartRow: Int
+        let outputEndRow: Int
+    }
+
+    private func readBufferLine(absoluteRow: Int) -> String? {
+        let terminal = getTerminal()
+        guard let bufferLine = terminal.getScrollInvariantLine(row: absoluteRow) else { return nil }
+        return bufferLine.translateToString(trimRight: true)
+    }
+
+    private static let blockPromptCharacters: Set<Character> = ["$", "%", ">", "\u{276F}"] // includes ❯
+
+    private func isPromptLine(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return false }
+        for (index, char) in trimmed.enumerated() {
+            if index > 60 { break }
+            if Self.blockPromptCharacters.contains(char) {
+                let nextIdx = trimmed.index(trimmed.startIndex, offsetBy: index + 1, limitedBy: trimmed.endIndex)
+                if nextIdx == nil || nextIdx == trimmed.endIndex || trimmed[nextIdx!] == " " {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private func findCommandBlock(at absoluteRow: Int) -> CommandBlock? {
+        // Scan backward to find the prompt line
+        var promptRow: Int? = nil
+        for row in stride(from: absoluteRow, through: max(0, absoluteRow - 5000), by: -1) {
+            guard let line = readBufferLine(absoluteRow: row) else { break }
+            if isPromptLine(line) {
+                promptRow = row
+                break
+            }
+        }
+        guard let promptRow else { return nil }
+
+        // Scan forward to find the next prompt (or end of buffer)
+        var endRow = promptRow
+        for row in (promptRow + 1)...(absoluteRow + 5000) {
+            guard let line = readBufferLine(absoluteRow: row) else {
+                endRow = row - 1
+                break
+            }
+            if isPromptLine(line) {
+                endRow = row - 1
+                break
+            }
+            endRow = row
+        }
+
+        let outputStart = promptRow + 1
+        guard outputStart <= endRow else { return nil }
+        return CommandBlock(promptRow: promptRow, outputStartRow: outputStart, outputEndRow: endRow)
+    }
+
+    private func extractOutputText(from block: CommandBlock) -> String? {
+        var lines: [String] = []
+        for row in block.outputStartRow...block.outputEndRow {
+            if let line = readBufferLine(absoluteRow: row) {
+                lines.append(line)
+            }
+        }
+        while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
+            lines.removeLast()
+        }
+        guard !lines.isEmpty else { return nil }
+        return lines.joined(separator: "\n")
+    }
+
+    private func installRightClickMonitor() {
+        rightClickMonitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
+            guard let self,
+                  let eventWindow = event.window,
+                  eventWindow === self.window else { return event }
+            let locationInView = self.convert(event.locationInWindow, from: nil)
+            guard self.bounds.contains(locationInView) else { return event }
+
+            self.showContextMenu(with: event)
+            return nil // consume the event
+        }
+    }
+
+    private func showContextMenu(with event: NSEvent) {
+        let terminal = getTerminal()
+        guard terminal.cols > 0, terminal.rows > 0 else { return }
+
+        let point = convert(event.locationInWindow, from: nil)
+        let cellHeight = frame.height / CGFloat(terminal.rows)
+
+        let viewportRow = Int((frame.height - point.y) / cellHeight)
+        let absoluteRow = viewportRow + terminal.buffer.yDisp
+
+        let menu = NSMenu()
+
+        if let block = findCommandBlock(at: absoluteRow),
+           let outputText = extractOutputText(from: block) {
+            let copyOutput = NSMenuItem(title: "Copy Output", action: #selector(copyBlockOutput(_:)), keyEquivalent: "")
+            copyOutput.representedObject = outputText
+            copyOutput.target = self
+            menu.addItem(copyOutput)
+
+            if let cmdLine = readBufferLine(absoluteRow: block.promptRow) {
+                let copyCmd = NSMenuItem(title: "Copy Command", action: #selector(copyBlockOutput(_:)), keyEquivalent: "")
+                let trimmed = cmdLine.trimmingCharacters(in: .whitespaces)
+                var cmdText = trimmed
+                for (index, char) in trimmed.enumerated() {
+                    if Self.blockPromptCharacters.contains(char) {
+                        let afterPrompt = trimmed.index(trimmed.startIndex, offsetBy: index + 1, limitedBy: trimmed.endIndex)
+                        if let afterPrompt, afterPrompt < trimmed.endIndex {
+                            cmdText = String(trimmed[afterPrompt...]).trimmingCharacters(in: .whitespaces)
+                        }
+                        break
+                    }
+                }
+                copyCmd.representedObject = cmdText
+                copyCmd.target = self
+                menu.addItem(copyCmd)
+            }
+
+            menu.addItem(.separator())
+        }
+
+        let paste = NSMenuItem(title: "Paste", action: #selector(pasteFromClipboard), keyEquivalent: "")
+        paste.target = self
+        menu.addItem(paste)
+
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    @objc private func copyBlockOutput(_ sender: NSMenuItem) {
+        guard let text = sender.representedObject as? String else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    @objc private func pasteFromClipboard() {
+        guard let text = NSPasteboard.general.string(forType: .string) else { return }
+        send(txt: text)
     }
 }
 

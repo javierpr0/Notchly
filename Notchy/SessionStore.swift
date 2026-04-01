@@ -223,6 +223,9 @@ class SessionStore {
         let oldPaneStatus = sessions[index].paneStatuses[paneId] ?? .idle
         guard oldPaneStatus != status else { return }
 
+        // Don't let .idle overwrite .taskCompleted — only cleared when user selects the tab
+        if status == .idle && oldPaneStatus == .taskCompleted { return }
+
         let previousAggregate = sessions[index].terminalStatus
         sessions[index].paneStatuses[paneId] = status
         let newAggregate = sessions[index].terminalStatus

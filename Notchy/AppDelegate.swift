@@ -47,6 +47,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         setupHotkey()
         setupUpdater()
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleCheckForUpdates),
+            name: .NotchyCheckForUpdates,
+            object: nil
+        )
+    }
+
+    @objc private func handleCheckForUpdates() {
+        updaterController?.checkForUpdates(nil)
     }
 
     private func syncSparkleLanguage() {

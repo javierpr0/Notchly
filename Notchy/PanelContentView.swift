@@ -438,6 +438,8 @@ struct PanelContentView: View {
                 } label: {
                     Text(L10n.shared.reset)
                         .font(.system(size: 11))
+                        .lineLimit(1)
+                        .fixedSize()
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(Color.white.opacity(0.08))
@@ -477,6 +479,25 @@ struct PanelContentView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 2)
             }
+
+            Divider().padding(.vertical, 6)
+
+            Button {
+                NotificationCenter.default.post(name: .NotchyCheckForUpdates, object: nil)
+                showSettings = false
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 12))
+                    Text(L10n.shared.checkForUpdates)
+                        .font(.system(size: 12))
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
         }
         .padding(.vertical, 8)
         .frame(width: 220)

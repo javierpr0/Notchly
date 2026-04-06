@@ -10,7 +10,7 @@ extension Notification.Name {
     static let NotchyHidePanel = Notification.Name("NotchyHidePanel")
     static let NotchyExpandPanel = Notification.Name("NotchyExpandPanel")
     static let NotchyNotchStatusChanged = Notification.Name("NotchyNotchStatusChanged")
-
+    static let NotchyCheckForUpdates = Notification.Name("NotchyCheckForUpdates")
 }
 
 @Observable

@@ -39,6 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        syncSparkleLanguage()
         setupStatusItem()
         setupPanel()
         if replaceNotch {
@@ -46,6 +47,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         setupHotkey()
         setupUpdater()
+    }
+
+    private func syncSparkleLanguage() {
+        let lang = L10n.shared.language.rawValue
+        UserDefaults.standard.set([lang], forKey: "AppleLanguages")
     }
 
     private func setupUpdater() {

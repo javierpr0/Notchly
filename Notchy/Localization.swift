@@ -23,6 +23,7 @@ final class L10n {
     var language: AppLanguage {
         didSet {
             UserDefaults.standard.set(language.rawValue, forKey: Self.languageKey)
+            UserDefaults.standard.set([language.rawValue], forKey: "AppleLanguages")
         }
     }
 

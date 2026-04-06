@@ -11,8 +11,8 @@
             <sparkle:shortVersionString>0.11.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:releaseNotesLink>https://github.com/javierpr0/Notchly/releases/tag/v0.11.0</sparkle:releaseNotesLink>
-            <pubDate>Mon, 06 Apr 2026 03:10:54 +0000</pubDate>
-            <enclosure url="https://github.com/javierpr0/Notchly/releases/download/v0.11.0/Notchly.dmg" sparkle:edSignature="sY4+6ab510nbBVc4dye5m0EqeiuEq3XHk/EFd+jKoWlsSp6mu50P/y3k4uJbsU9H/J4GB4w5qEOct75/zyW9AA==" length="3696279" type="application/octet-stream"/>
+            <pubDate>Mon, 06 Apr 2026 03:26:50 +0000</pubDate>
+            <enclosure url="https://github.com/javierpr0/Notchly/releases/download/v0.11.0/Notchly.dmg" sparkle:edSignature="Wmgg+1/23ismhZDr6muTJtnWtrAblyQLxvPWkfx3Jbkl4x9EvPzKR60i/kaNAZe7D8bWnbk9D0DzNReKDMpBBQ==" length="3698256" type="application/octet-stream"/>
         </item>
     </channel>
 </rss>

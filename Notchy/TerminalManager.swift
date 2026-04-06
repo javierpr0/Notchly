@@ -848,5 +848,6 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
             terminal.installColors(theme.swiftTermColors())
             terminal.setNeedsDisplay(terminal.bounds)
         }
+        SessionStore.shared.currentTheme = theme
     }
 }

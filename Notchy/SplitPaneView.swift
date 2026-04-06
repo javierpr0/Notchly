@@ -144,7 +144,7 @@ struct PaneControlsView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundColor(.white)
+        .foregroundColor(Color(nsColor: SessionStore.shared.currentTheme.chromeForeground))
         .help(help)
     }
 }

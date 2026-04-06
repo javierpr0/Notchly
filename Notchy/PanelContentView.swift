@@ -42,6 +42,8 @@ struct PanelContentView: View {
     @State private var showSettings = false
     @State private var currentFontSize = TerminalManager.shared.fontSize
 
+    private var theme: TerminalTheme { sessionStore.currentTheme }
+
     private var foregroundOpacity: Double {
         sessionStore.isWindowFocused ? 1.0 : 0.6
     }
@@ -65,7 +67,7 @@ struct PanelContentView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(.white.opacity(foregroundOpacity))
+                    .foregroundColor(Color(nsColor: theme.chromeForeground).opacity(foregroundOpacity))
                     .help(sessionStore.isPinned ? L10n.shared.unpinPanel : L10n.shared.pinPanelOpen)
 
                     Button(action: { showSettings.toggle() }) {
@@ -76,7 +78,7 @@ struct PanelContentView: View {
                             .opacity(showSettings ? 1.0 : foregroundOpacity)
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(.white)
+                    .foregroundColor(Color(nsColor: theme.chromeForeground))
                     .help(L10n.shared.settings)
                     .popover(isPresented: $showSettings, arrowEdge: .bottom) {
                         settingsMenuContent
@@ -134,14 +136,14 @@ struct PanelContentView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(.white.opacity(foregroundOpacity))
+                    .foregroundColor(Color(nsColor: theme.chromeForeground).opacity(foregroundOpacity))
                     .help(L10n.shared.newTerminal)
                 }
                 .padding(.leading, -4)
                 .padding(.trailing, -10)
             }
             .padding(.horizontal, 12)
-            .background(Color(nsColor: NSColor(white: 0.12, alpha: 1.0)).opacity(chromeBackgroundOpacity))
+            .background(Color(nsColor: theme.chromeBackground).opacity(chromeBackgroundOpacity))
 
             if sessionStore.isTerminalExpanded, sessionStore.checkpointStatus != nil || sessionStore.lastCheckpoint != nil {
                 HStack(spacing: 6) {
@@ -161,7 +163,7 @@ struct PanelContentView: View {
                         }
                         .buttonStyle(.plain)
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color(nsColor: NSColor(white: 0.18, alpha: 1.0)))
+                        .foregroundColor(Color(nsColor: theme.chromeBackgroundDarker))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(Color.white.opacity(0.8))
@@ -176,7 +178,7 @@ struct PanelContentView: View {
                             .font(.system(size: 11, weight: .medium))
                         Text(checkpoint.displayName)
                             .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.5))
+                            .foregroundColor(Color(nsColor: theme.chromeForeground).opacity(0.5))
 
                         Spacer()
 
@@ -190,7 +192,7 @@ struct PanelContentView: View {
                         }
                         .buttonStyle(.plain)
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color(nsColor: NSColor(white: 0.18, alpha: 1.0)))
+                        .foregroundColor(Color(nsColor: theme.chromeBackgroundDarker))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(Color.white.opacity(0.8))
@@ -202,13 +204,13 @@ struct PanelContentView: View {
                                 .font(.system(size: 9, weight: .bold))
                         }
                         .buttonStyle(.plain)
-                        .foregroundColor(.white.opacity(0.4))
+                        .foregroundColor(Color(nsColor: theme.chromeForeground).opacity(0.4))
                     }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(Color(nsColor: NSColor(white: 0.18, alpha: 1.0)).opacity(chromeBackgroundOpacity))
-                .foregroundColor(.white.opacity(0.8))
+                .background(Color(nsColor: theme.chromeBackgroundDarker).opacity(chromeBackgroundOpacity))
+                .foregroundColor(Color(nsColor: theme.chromeForeground).opacity(0.8))
             }
 
             if sessionStore.isTerminalExpanded {
@@ -238,7 +240,7 @@ struct PanelContentView: View {
             }
         }
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 8.5, bottomLeadingRadius: 9.5, bottomTrailingRadius: 9.5, topTrailingRadius: 8.5))
-        .background(Color(nsColor: NSColor(white: 0.1, alpha: 1.0)).opacity(chromeBackgroundOpacity))
+        .background(Color(nsColor: theme.background).opacity(chromeBackgroundOpacity))
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 8.5, bottomLeadingRadius: 9.5, bottomTrailingRadius: 9.5, topTrailingRadius: 8.5))
         .overlay {
             if sessionStore.showCommandPalette,
@@ -366,6 +368,7 @@ struct PanelContentView: View {
                 Button {
                     TerminalManager.shared.setTheme(theme.id)
                     selectedThemeId = theme.id
+                    sessionStore.currentTheme = theme
                 } label: {
                     HStack(spacing: 8) {
                         RoundedRectangle(cornerRadius: 3)
@@ -527,7 +530,7 @@ struct PanelContentView: View {
     }
 
     private func placeholderView(_ message: String) -> some View {
-        Color(nsColor: NSColor(white: 0.1, alpha: 1.0))
+        Color(nsColor: theme.background)
             .overlay {
                 Text(message)
                     .font(.system(size: 13))

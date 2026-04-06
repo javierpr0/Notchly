@@ -180,7 +180,7 @@ struct SessionTab: View {
                 .foregroundColor(.green)
         case .idle, .interrupted:
             Circle()
-                .fill(Color.white.opacity(0.2))
+                .fill(Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(0.2))
                 .frame(width: 5, height: 5)
         }
     }
@@ -207,7 +207,7 @@ struct SessionTab: View {
                     Text(name)
                         .font(.system(size: 11, weight: isActive ? .medium : .regular))
                         .lineLimit(1)
-                        .foregroundColor(.white.opacity(isActive ? foregroundOpacity : foregroundOpacity * 0.6))
+                        .foregroundColor(Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(isActive ? foregroundOpacity : foregroundOpacity * 0.6))
                 }
             }
 
@@ -215,9 +215,9 @@ struct SessionTab: View {
                 Button(action: onClose) {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(0.5))
                         .frame(width: 12, height: 12)
-                        .background(Color.white.opacity(0.1))
+                        .background(Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(0.1))
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -228,8 +228,8 @@ struct SessionTab: View {
         .background(
             RoundedRectangle(cornerRadius: 5)
                 .fill(isActive
-                    ? Color.white.opacity(0.1)
-                    : isHovering ? Color.white.opacity(0.05) : Color.clear)
+                    ? Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(0.1)
+                    : isHovering ? Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(0.05) : Color.clear)
         )
         .onHover { hovering in
             isHovering = hovering
@@ -327,7 +327,7 @@ struct TabSpinnerView: View {
     var body: some View {
         Circle()
             .trim(from: 0.05, to: 0.8)
-            .stroke(Color.white, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+            .stroke(Color(nsColor: SessionStore.shared.currentTheme.chromeForeground), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
             .rotationEffect(.degrees(isAnimating ? 360 : 0))
             .animation(.linear(duration: 0.8).repeatForever(autoreverses: false), value: isAnimating)
             .onAppear { isAnimating = true }

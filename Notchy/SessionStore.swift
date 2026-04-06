@@ -32,6 +32,7 @@ class SessionStore {
     var isWindowFocused = true
     var isShowingDialog = false
     var showCommandPalette = false
+    var currentTheme: TerminalTheme = TerminalTheme.theme(forId: TerminalManager.shared.currentThemeId)
 
     /// The most recent checkpoint for the active session, used to show the undo button
     var lastCheckpoint: Checkpoint?

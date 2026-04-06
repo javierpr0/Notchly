@@ -21,6 +21,31 @@ struct TerminalTheme: Identifiable, Equatable {
         }
     }
 
+    // Derived chrome colors for the full-app theming
+    var chromeBackground: NSColor {
+        background.blended(withFraction: 0.1, of: .white) ?? background
+    }
+
+    var chromeBackgroundDarker: NSColor {
+        background.blended(withFraction: 0.05, of: .white) ?? background
+    }
+
+    var chromeForeground: NSColor {
+        foreground
+    }
+
+    var chromeSecondary: NSColor {
+        foreground.withAlphaComponent(0.5)
+    }
+
+    var chromeAccent: NSColor {
+        cursor
+    }
+
+    var chromeDivider: NSColor {
+        foreground.withAlphaComponent(0.12)
+    }
+
     static let allThemes: [TerminalTheme] = [
         .default, .dracula, .oneDark, .solarizedDark, .solarizedLight,
         .nord, .monokai, .tokyoNight, .gruvboxDark, .catppuccinMocha

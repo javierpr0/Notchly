@@ -47,6 +47,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         setupHotkey()
         setupUpdater()
+        FullDiskAccessChecker.promptIfNeeded()
 
         NotificationCenter.default.addObserver(
             self,

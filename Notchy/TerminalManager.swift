@@ -73,6 +73,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         installClickMonitor()
         installRightClickMonitor()
         installMouseUpMonitor()
+        installScrollMonitor()
     }
 
     deinit {
@@ -86,6 +87,9 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
             NSEvent.removeMonitor(monitor)
         }
         if let monitor = mouseUpMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = scrollMonitor {
             NSEvent.removeMonitor(monitor)
         }
     }
@@ -727,6 +731,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         terminal.sessionId = sessionId
         terminal.processDelegate = self
         terminal.setWorkingDirectory(workingDirectory)
+        terminal.optionAsMetaKey = false
 
         terminal.font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         applyTheme(to: terminal)

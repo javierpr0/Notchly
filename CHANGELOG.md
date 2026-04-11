@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-04-09
+
+### Added
+- Full Disk Access detection and first-run prompt with deep link to System Settings
+- Full Disk Access menu entry in settings to re-open the permission panel anytime
+
+### Fixed
+- Option key now produces Latin characters (`@`, `#`, `{`, `}`, `[`, `]`) instead of sending Meta sequences
+- Command palette commands now persist across sessions (SHA256 hash for per-directory storage instead of colliding short hash)
+- Scroll monitor cleanup on terminal view deallocation to prevent memory leak
+
 ## [0.16.0] - 2026-04-06
 
 ### Added
@@ -161,7 +172,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global backtick hotkey to toggle panel
 - Pin panel open option
 
-[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/javierpr0/notchly/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/javierpr0/notchly/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/javierpr0/notchly/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/javierpr0/notchly/compare/v0.13.0...v0.14.0

@@ -486,6 +486,24 @@ struct PanelContentView: View {
             Divider().padding(.vertical, 6)
 
             Button {
+                FullDiskAccessChecker.resetDismissal()
+                FullDiskAccessChecker.showDialog()
+                showSettings = false
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "lock.shield")
+                        .font(.system(size: 12))
+                    Text(L10n.shared.fullDiskAccess)
+                        .font(.system(size: 12))
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+
+            Button {
                 NotificationCenter.default.post(name: .NotchyCheckForUpdates, object: nil)
                 showSettings = false
             } label: {

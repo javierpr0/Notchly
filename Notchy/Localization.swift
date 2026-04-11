@@ -128,4 +128,17 @@ final class L10n {
 
     func historyTitle(_ name: String) -> String { isSpanish ? "Historial: \(name)" : "History: \(name)" }
     var noHistory: String { isSpanish ? "No hay historial disponible para esta sesión." : "No history available for this session." }
+
+    // MARK: - Full Disk Access
+
+    var fdaTitle: String { isSpanish ? "Acceso completo al disco" : "Full Disk Access" }
+    var fdaMessage: String {
+        isSpanish
+            ? "Notchly necesita acceso completo al disco para que los comandos en la terminal puedan leer tus archivos en Documentos, Escritorio, Descargas y otras carpetas protegidas.\n\nSin este permiso, algunos comandos fallarán con \"Operation not permitted\".\n\nTu terminal funcionará igual que Terminal.app o iTerm2."
+            : "Notchly needs Full Disk Access so terminal commands can read files in Documents, Desktop, Downloads and other protected folders.\n\nWithout this permission, some commands will fail with \"Operation not permitted\".\n\nYour terminal will work just like Terminal.app or iTerm2."
+    }
+    var fdaOpenSettings: String { isSpanish ? "Abrir Ajustes del Sistema" : "Open System Settings" }
+    var fdaLater: String { isSpanish ? "Más tarde" : "Later" }
+    var fdaDontAskAgain: String { isSpanish ? "No volver a preguntar" : "Don't ask again" }
+    var fullDiskAccess: String { isSpanish ? "Acceso completo al disco" : "Full Disk Access" }
 }

@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 struct StoredCommand: Codable {
     var text: String
@@ -105,10 +106,8 @@ class CommandStore {
     // MARK: - Private
 
     private func filePath(for directory: String) -> URL {
-        let hash = directory.data(using: .utf8)!
-            .map { String(format: "%02x", $0) }
-            .joined()
-            .prefix(40)
+        let digest = SHA256.hash(data: Data(directory.utf8))
+        let hash = digest.map { String(format: "%02x", $0) }.joined()
         return baseDir.appendingPathComponent("\(hash).json")
     }
 

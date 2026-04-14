@@ -112,6 +112,9 @@ final class L10n {
     var copyOutput: String { isSpanish ? "Copiar salida" : "Copy Output" }
     var copyCommand: String { isSpanish ? "Copiar comando" : "Copy Command" }
     var paste: String { isSpanish ? "Pegar" : "Paste" }
+    var revealInFinder: String { isSpanish ? "Mostrar en Finder" : "Reveal in Finder" }
+    var openInFinder: String { isSpanish ? "Abrir en Finder" : "Open in Finder" }
+    var copyPath: String { isSpanish ? "Copiar ruta" : "Copy Path" }
 
     // MARK: - Search
 

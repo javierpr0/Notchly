@@ -626,6 +626,25 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
             }
+
+            // Strip the Command modifier so SwiftTerm never takes its link-opening
+            // path (which calls NSWorkspace.open on implicit matches like
+            // "./scripts/foo.sh" and shows a Finder error popup). Opening paths in
+            // Finder is available through the right-click context menu instead.
+            if event.modifierFlags.contains(.command),
+               let stripped = NSEvent.mouseEvent(
+                   with: event.type,
+                   location: event.locationInWindow,
+                   modifierFlags: event.modifierFlags.subtracting(.command),
+                   timestamp: event.timestamp,
+                   windowNumber: event.windowNumber,
+                   context: nil,
+                   eventNumber: event.eventNumber,
+                   clickCount: event.clickCount,
+                   pressure: event.pressure
+               ) {
+                return stripped
+            }
             return event
         }
     }
@@ -683,11 +702,110 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
             menu.addItem(.separator())
         }
 
+        if let pathURL = detectPathForContextMenu(at: absoluteRow) {
+            if menu.items.last?.isSeparatorItem == false {
+                menu.addItem(.separator())
+            }
+
+            let isDir = (try? pathURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+
+            let openItem = NSMenuItem(title: L10n.shared.openInFinder, action: #selector(openPathInFinder(_:)), keyEquivalent: "")
+            openItem.representedObject = pathURL
+            openItem.target = self
+            menu.addItem(openItem)
+
+            if !isDir {
+                let revealItem = NSMenuItem(title: L10n.shared.revealInFinder, action: #selector(revealPathInFinder(_:)), keyEquivalent: "")
+                revealItem.representedObject = pathURL
+                revealItem.target = self
+                menu.addItem(revealItem)
+            }
+
+            let copyPathItem = NSMenuItem(title: L10n.shared.copyPath, action: #selector(copyPath(_:)), keyEquivalent: "")
+            copyPathItem.representedObject = pathURL.path
+            copyPathItem.target = self
+            menu.addItem(copyPathItem)
+
+            menu.addItem(.separator())
+        }
+
         let paste = NSMenuItem(title: L10n.shared.paste, action: #selector(pasteFromClipboard), keyEquivalent: "")
         paste.target = self
         menu.addItem(paste)
 
         NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    /// Resolve a candidate path from the current selection, or from the line under the click.
+    /// Returns a URL only if the path actually exists on disk.
+    private func detectPathForContextMenu(at absoluteRow: Int) -> URL? {
+        if let selection = getSelection()?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !selection.isEmpty,
+           !selection.contains("\n"),
+           let url = resolveExistingPath(selection) {
+            return url
+        }
+        guard let line = readBufferLine(absoluteRow: absoluteRow) else { return nil }
+        let candidates = Self.pathCandidates(in: line)
+        for candidate in candidates {
+            if let url = resolveExistingPath(candidate) { return url }
+        }
+        return nil
+    }
+
+    private func resolveExistingPath(_ raw: String) -> URL? {
+        var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Strip surrounding quotes and common trailing punctuation
+        while let first = trimmed.first, first == "\"" || first == "'" || first == "(" || first == "[" {
+            trimmed.removeFirst()
+        }
+        while let last = trimmed.last, last == "\"" || last == "'" || last == ")" || last == "]" || last == "," || last == ":" || last == ";" || last == "." {
+            trimmed.removeLast()
+        }
+        guard !trimmed.isEmpty else { return nil }
+
+        // Handle file:// URLs
+        if trimmed.hasPrefix("file://"), let url = URL(string: trimmed) {
+            return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        }
+
+        // Expand ~ and resolve relative against cwd
+        let expanded = (trimmed as NSString).expandingTildeInPath
+        let absolutePath: String
+        if expanded.hasPrefix("/") {
+            absolutePath = expanded
+        } else if let cwd = currentWorkingDir {
+            absolutePath = (cwd as NSString).appendingPathComponent(expanded)
+        } else {
+            return nil
+        }
+
+        return FileManager.default.fileExists(atPath: absolutePath) ? URL(fileURLWithPath: absolutePath) : nil
+    }
+
+    /// Break a line into plausible path tokens. Paths can contain spaces, but we use
+    /// whitespace splitting as a first pass; callers verify existence on disk.
+    private static func pathCandidates(in line: String) -> [String] {
+        var tokens = line.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
+        // Keep only tokens that look path-ish (contain /, start with ~, or end with a known ext)
+        tokens = tokens.filter { $0.contains("/") || $0.hasPrefix("~") || $0.hasPrefix(".") }
+        return tokens
+    }
+
+    @objc private func openPathInFinder(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc private func revealPathInFinder(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    @objc private func copyPath(_ sender: NSMenuItem) {
+        guard let path = sender.representedObject as? String else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(path, forType: .string)
     }
 
     @objc private func copyBlockOutput(_ sender: NSMenuItem) {
@@ -732,7 +850,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         terminal.processDelegate = self
         terminal.setWorkingDirectory(workingDirectory)
         terminal.optionAsMetaKey = false
-        terminal.terminal.changeScrollback(newScrollback: 10_000)
+        terminal.terminal.changeScrollback(10_000)
 
         terminal.font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         applyTheme(to: terminal)

@@ -4,10 +4,28 @@ set -euo pipefail
 REMOTE="${NOTCHLY_RELEASE_REMOTE:-origin}"
 CHANGELOG="$(cd "$(dirname "$0")/.." && pwd)/CHANGELOG.md"
 
-# --- Determine version ---
-VERSION="${1:-}"
+# --- Parse arguments ---
+FORCE=0
+VERSION=""
+for arg in "$@"; do
+    case "$arg" in
+        -f|--force)
+            FORCE=1
+            ;;
+        -h|--help)
+            echo "Uso: ./scripts/release.sh <version> [--force]"
+            echo "  Ejemplo: ./scripts/release.sh 0.13.0"
+            echo "  --force, -f   Borra tag local/remoto y release previo antes de recrearlo"
+            exit 0
+            ;;
+        *)
+            VERSION="$arg"
+            ;;
+    esac
+done
+
 if [ -z "$VERSION" ]; then
-    echo "Uso: ./scripts/release.sh <version>"
+    echo "Uso: ./scripts/release.sh <version> [--force]"
     echo "  Ejemplo: ./scripts/release.sh 0.13.0"
     echo ""
     echo "Versiones existentes:"
@@ -30,13 +48,44 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
     exit 1
 fi
 
-# Check tag doesn't already exist
-if git tag -l "$TAG" | grep -q "$TAG"; then
-    echo "ERROR: El tag $TAG ya existe."
-    echo "  Si necesitas re-crear el release:"
-    echo "    git push $REMOTE --delete $TAG"
-    echo "    git tag -d $TAG"
-    exit 1
+# Check tag doesn't already exist (or clean it up if --force)
+TAG_EXISTS_LOCAL=0
+TAG_EXISTS_REMOTE=0
+if git tag -l "$TAG" | grep -q "^${TAG}$"; then
+    TAG_EXISTS_LOCAL=1
+fi
+if git ls-remote --tags "$REMOTE" "refs/tags/${TAG}" | grep -q "$TAG"; then
+    TAG_EXISTS_REMOTE=1
+fi
+
+if [ "$TAG_EXISTS_LOCAL" = "1" ] || [ "$TAG_EXISTS_REMOTE" = "1" ]; then
+    if [ "$FORCE" != "1" ]; then
+        echo "ERROR: El tag $TAG ya existe (local=$TAG_EXISTS_LOCAL, remoto=$TAG_EXISTS_REMOTE)."
+        echo "  Usa --force para borrar tag y release previos y recrearlos:"
+        echo "    ./scripts/release.sh $VERSION --force"
+        exit 1
+    fi
+
+    echo "==> --force: limpiando tag y release previos para $TAG..."
+
+    # Delete GitHub release if present (requires gh CLI)
+    if command -v gh >/dev/null 2>&1; then
+        if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "  Borrando GitHub Release $TAG..."
+            gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || gh release delete "$TAG" --yes
+        fi
+    fi
+
+    if [ "$TAG_EXISTS_REMOTE" = "1" ]; then
+        echo "  Borrando tag remoto $TAG..."
+        git push "$REMOTE" --delete "$TAG" 2>/dev/null || true
+    fi
+    if [ "$TAG_EXISTS_LOCAL" = "1" ]; then
+        echo "  Borrando tag local $TAG..."
+        git tag -d "$TAG" >/dev/null
+    fi
+    echo "  Limpieza OK"
+    echo ""
 fi
 
 # --- Verify CHANGELOG ---

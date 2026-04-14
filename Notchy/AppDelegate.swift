@@ -1,4 +1,5 @@
 import AppKit
+import Sparkle
 import SwiftUI
 
 @MainActor
@@ -7,6 +8,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var panel: TerminalPanel = TerminalPanel(sessionStore: sessionStore)
     private var notchWindow: NotchWindow?
     private let sessionStore = SessionStore.shared
+    private var updaterController: SPUStandardUpdaterController?
     private var hoverHideTimer: Timer?
     private var hoverGlobalMonitor: Any?
     private var hoverLocalMonitor: Any?
@@ -37,12 +39,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        syncSparkleLanguage()
         setupStatusItem()
         setupPanel()
         if replaceNotch {
             setupNotchWindow()
         }
         setupHotkey()
+        setupUpdater()
+        FullDiskAccessChecker.promptIfNeeded()
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleCheckForUpdates),
+            name: .NotchyCheckForUpdates,
+            object: nil
+        )
+    }
+
+    @objc private func handleCheckForUpdates() {
+        updaterController?.checkForUpdates(nil)
+    }
+
+    private func syncSparkleLanguage() {
+        let lang = L10n.shared.language.rawValue
+        UserDefaults.standard.set([lang], forKey: "AppleLanguages")
+    }
+
+    private func setupUpdater() {
+        do {
+            let controller = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
+            try controller.updater.start()
+            updaterController = controller
+        } catch {
+            NSLog("Sparkle updater failed to start: \(error)")
+        }
     }
 
     private func setupStatusItem() {
@@ -198,7 +229,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
 
         let notchItem = NSMenuItem(
-            title: "Show in notch...",
+            title: L10n.shared.showInNotch,
             action: #selector(toggleReplaceNotch),
             keyEquivalent: ""
         )
@@ -223,7 +254,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let newItem = NSMenuItem(
-            title: "New Session",
+            title: L10n.shared.newSession,
             action: #selector(createNewSession),
             keyEquivalent: "n"
         )
@@ -236,12 +267,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if !eligibleSessions.isEmpty {
             menu.addItem(.separator())
 
-            let headingItem = NSMenuItem(title: "Checkpoint", action: nil, keyEquivalent: "")
+            let headingItem = NSMenuItem(title: L10n.shared.checkpoint, action: nil, keyEquivalent: "")
             headingItem.isEnabled = false
             menu.addItem(headingItem)
 
             let saveItem = NSMenuItem(
-                title: "Save...",
+                title: L10n.shared.save,
                 action: nil,
                 keyEquivalent: ""
             )
@@ -266,7 +297,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(saveItem)
 
             let restoreItem = NSMenuItem(
-                title: "Restore from…",
+                title: L10n.shared.restoreFrom,
                 action: nil,
                 keyEquivalent: ""
             )
@@ -293,8 +324,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
+        let updateItem = NSMenuItem(
+            title: L10n.shared.checkForUpdates,
+            action: #selector(checkForUpdates),
+            keyEquivalent: ""
+        )
+        updateItem.target = self
+        updateItem.isEnabled = updaterController?.updater.canCheckForUpdates ?? false
+        menu.addItem(updateItem)
+
+        menu.addItem(.separator())
+
         let quitItem = NSMenuItem(
-            title: "Quit Notchly",
+            title: L10n.shared.quitNotchly,
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         )
@@ -333,6 +375,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             notchWindow?.orderOut(nil)
             notchWindow = nil
         }
+    }
+
+    @objc private func checkForUpdates() {
+        updaterController?.checkForUpdates(nil)
     }
 
     @objc private func createNewSession() {

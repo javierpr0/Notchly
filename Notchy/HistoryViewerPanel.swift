@@ -36,14 +36,14 @@ class HistoryViewerPanel: NSPanel {
             defer: false
         )
 
-        self.title = "History: \(sessionName)"
+        self.title = L10n.shared.historyTitle(sessionName)
         self.minSize = NSSize(width: 400, height: 300)
         self.contentView = scrollView
         self.isReleasedWhenClosed = false
         self.center()
 
         if content.isEmpty {
-            textView.string = "No history available for this session."
+            textView.string = L10n.shared.noHistory
         } else {
             textView.string = content
             // Scroll to bottom

@@ -27,6 +27,22 @@ if [ ! -d "$APP_PATH" ]; then
     exit 1
 fi
 
+echo "==> Re-signing embedded frameworks..."
+find "$APP_PATH/Contents/Frameworks" -type f -perm +111 -o -name "*.dylib" | while read -r binary; do
+    codesign --force --sign - --timestamp=none "$binary" 2>/dev/null || true
+done
+find "$APP_PATH/Contents/Frameworks" -name "*.framework" -type d | while read -r fw; do
+    codesign --force --sign - --deep --timestamp=none "$fw" 2>/dev/null || true
+done
+find "$APP_PATH/Contents/Frameworks" -name "*.app" -type d | while read -r subapp; do
+    codesign --force --sign - --deep --timestamp=none "$subapp" 2>/dev/null || true
+done
+find "$APP_PATH/Contents/Frameworks" -name "*.xpc" -type d | while read -r xpc; do
+    codesign --force --sign - --deep --timestamp=none "$xpc" 2>/dev/null || true
+done
+codesign --force --sign - --deep --timestamp=none "$APP_PATH"
+echo "    Done"
+
 echo "==> Creating DMG..."
 rm -rf "$DMG_DIR" "$DMG_PATH"
 mkdir -p "$DMG_DIR"

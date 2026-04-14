@@ -39,6 +39,10 @@ struct PanelContentView: View {
     @State private var claudeUseChrome = false
     @State private var claudeSkipPermissions = false
     @State private var selectedThemeId = TerminalManager.shared.currentThemeId
+    @State private var showSettings = false
+    @State private var currentFontSize = TerminalManager.shared.fontSize
+
+    private var theme: TerminalTheme { sessionStore.currentTheme }
 
     private var foregroundOpacity: Double {
         sessionStore.isWindowFocused ? 1.0 : 0.6
@@ -54,7 +58,7 @@ struct PanelContentView: View {
             // Top bar: tabs + controls
             HStack(spacing: 8) {
 
-                ZStack {
+                HStack(spacing: 2) {
                     Button(action: { sessionStore.isPinned.toggle() }) {
                         Image(systemName: sessionStore.isPinned ? "pin.fill" : "pin")
                             .font(.system(size: 12, weight: .medium))
@@ -63,8 +67,22 @@ struct PanelContentView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(.white.opacity(foregroundOpacity))
-                    .help(sessionStore.isPinned ? "Unpin panel" : "Pin panel open")
+                    .foregroundColor(Color(nsColor: theme.chromeForeground).opacity(foregroundOpacity))
+                    .help(sessionStore.isPinned ? L10n.shared.unpinPanel : L10n.shared.pinPanelOpen)
+
+                    Button(action: { showSettings.toggle() }) {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                            .opacity(showSettings ? 1.0 : foregroundOpacity)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(Color(nsColor: theme.chromeForeground))
+                    .help(L10n.shared.settings)
+                    .popover(isPresented: $showSettings, arrowEdge: .bottom) {
+                        settingsMenuContent
+                    }
                 }
                 .padding(.trailing, -4)
                 .padding(.leading, -10)
@@ -103,7 +121,7 @@ struct PanelContentView: View {
                             .opacity(showClaudeMenu ? 1.0 : foregroundOpacity)
                     }
                     .buttonStyle(.plain)
-                    .help("Launch Claude")
+                    .help(L10n.shared.launchClaude)
                     .popover(isPresented: $showClaudeMenu, arrowEdge: .bottom) {
                         claudeMenuContent
                     }
@@ -118,14 +136,14 @@ struct PanelContentView: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(.white.opacity(foregroundOpacity))
-                    .help("New terminal")
+                    .foregroundColor(Color(nsColor: theme.chromeForeground).opacity(foregroundOpacity))
+                    .help(L10n.shared.newTerminal)
                 }
                 .padding(.leading, -4)
                 .padding(.trailing, -10)
             }
             .padding(.horizontal, 12)
-            .background(Color(nsColor: NSColor(white: 0.12, alpha: 1.0)).opacity(chromeBackgroundOpacity))
+            .background(Color(nsColor: theme.chromeBackground).opacity(chromeBackgroundOpacity))
 
             if sessionStore.isTerminalExpanded, sessionStore.checkpointStatus != nil || sessionStore.lastCheckpoint != nil {
                 HStack(spacing: 6) {
@@ -140,12 +158,12 @@ struct PanelContentView: View {
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "clock.arrow.circlepath")
-                                Text("Restore last checkpoint")
+                                Text(L10n.shared.restoreLastCheckpoint)
                             }
                         }
                         .buttonStyle(.plain)
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color(nsColor: NSColor(white: 0.18, alpha: 1.0)))
+                        .foregroundColor(Color(nsColor: theme.chromeBackgroundDarker))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(Color.white.opacity(0.8))
@@ -156,11 +174,11 @@ struct PanelContentView: View {
                     } else if let checkpoint = sessionStore.lastCheckpoint {
                         Image(systemName: "bookmark.fill")
                             .font(.system(size: 10, weight: .semibold))
-                        Text("Checkpoint Saved")
+                        Text(L10n.shared.checkpointSaved)
                             .font(.system(size: 11, weight: .medium))
                         Text(checkpoint.displayName)
                             .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.5))
+                            .foregroundColor(Color(nsColor: theme.chromeForeground).opacity(0.5))
 
                         Spacer()
 
@@ -169,12 +187,12 @@ struct PanelContentView: View {
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "clock.arrow.circlepath")
-                                Text("Restore last checkpoint")
+                                Text(L10n.shared.restoreLastCheckpoint)
                             }
                         }
                         .buttonStyle(.plain)
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color(nsColor: NSColor(white: 0.18, alpha: 1.0)))
+                        .foregroundColor(Color(nsColor: theme.chromeBackgroundDarker))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(Color.white.opacity(0.8))
@@ -186,13 +204,13 @@ struct PanelContentView: View {
                                 .font(.system(size: 9, weight: .bold))
                         }
                         .buttonStyle(.plain)
-                        .foregroundColor(.white.opacity(0.4))
+                        .foregroundColor(Color(nsColor: theme.chromeForeground).opacity(0.4))
                     }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(Color(nsColor: NSColor(white: 0.18, alpha: 1.0)).opacity(chromeBackgroundOpacity))
-                .foregroundColor(.white.opacity(0.8))
+                .background(Color(nsColor: theme.chromeBackgroundDarker).opacity(chromeBackgroundOpacity))
+                .foregroundColor(Color(nsColor: theme.chromeForeground).opacity(0.8))
             }
 
             if sessionStore.isTerminalExpanded {
@@ -209,21 +227,42 @@ struct PanelContentView: View {
                             sessionStore: sessionStore
                         )
                     } else {
-                        placeholderView("Click a project tab to start a terminal session")
+                        placeholderView(L10n.shared.clickTabToStart)
                             .onTapGesture {
                                 sessionStore.startSessionIfNeeded(session.id)
                             }
                     }
                 } else if sessionStore.sessions.isEmpty {
-                    placeholderView("No sessions.\nClick + to create a new session.")
+                    placeholderView(L10n.shared.noSessions)
                 } else {
-                    placeholderView("Select a project to begin")
+                    placeholderView(L10n.shared.selectProject)
                 }
             }
         }
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 8.5, bottomLeadingRadius: 9.5, bottomTrailingRadius: 9.5, topTrailingRadius: 8.5))
-        .background(Color(nsColor: NSColor(white: 0.1, alpha: 1.0)).opacity(chromeBackgroundOpacity))
+        .background(Color(nsColor: theme.background).opacity(chromeBackgroundOpacity))
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 8.5, bottomLeadingRadius: 9.5, bottomTrailingRadius: 9.5, topTrailingRadius: 8.5))
+        .overlay {
+            if sessionStore.showCommandPalette,
+               let session = sessionStore.activeSession {
+                let dir = session.projectPath ?? session.workingDirectory
+                ZStack {
+                    Color.black.opacity(0.3)
+                        .onTapGesture { sessionStore.showCommandPalette = false }
+                    VStack {
+                        CommandPaletteView(
+                            currentDirectory: dir,
+                            onExecute: { command in
+                                TerminalManager.shared.sendCommand(to: session.focusedPaneId, command: command)
+                            },
+                            onDismiss: { sessionStore.showCommandPalette = false }
+                        )
+                        .padding(.top, 60)
+                        Spacer()
+                    }
+                }
+            }
+        }
         .onAppear {
             sessionStore.refreshLastCheckpoint()
         }
@@ -231,18 +270,24 @@ struct PanelContentView: View {
             sessionStore.refreshLastCheckpoint()
         }
         .onChange(of: showRestoreConfirmation) {
-            sessionStore.isShowingDialog = showRestoreConfirmation || showClaudeMenu
+            sessionStore.isShowingDialog = showRestoreConfirmation || showClaudeMenu || showSettings || sessionStore.showCommandPalette
         }
         .onChange(of: showClaudeMenu) {
-            sessionStore.isShowingDialog = showRestoreConfirmation || showClaudeMenu
+            sessionStore.isShowingDialog = showRestoreConfirmation || showClaudeMenu || showSettings || sessionStore.showCommandPalette
         }
-        .alert("Restore last checkpoint", isPresented: $showRestoreConfirmation) {
-            Button("Restore last checkpoint", role: .destructive) {
+        .onChange(of: showSettings) {
+            sessionStore.isShowingDialog = showRestoreConfirmation || showClaudeMenu || showSettings || sessionStore.showCommandPalette
+        }
+        .onChange(of: sessionStore.showCommandPalette) {
+            sessionStore.isShowingDialog = showRestoreConfirmation || showClaudeMenu || showSettings || sessionStore.showCommandPalette
+        }
+        .alert(L10n.shared.restoreCheckpointTitle, isPresented: $showRestoreConfirmation) {
+            Button(L10n.shared.restoreLastCheckpoint, role: .destructive) {
                 sessionStore.restoreLastCheckpoint()
             }
-            Button("Cancel", role: .cancel) {}
+            Button(L10n.shared.cancel, role: .cancel) {}
         } message: {
-            Text("This will overwrite your current working directory with the checkpoint. Are you sure?")
+            Text(L10n.shared.restoreCheckpointMessage)
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
             if notification.object is TerminalPanel {
@@ -275,20 +320,20 @@ struct PanelContentView: View {
     @ViewBuilder
     private var claudeMenuContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            claudeMenuItem(title: "New Session", subtitle: "Start fresh", icon: "plus.circle.fill", color: .green) {
+            claudeMenuItem(title: L10n.shared.newSessionTitle, subtitle: L10n.shared.startFresh, icon: "plus.circle.fill", color: .green) {
                 launchClaude(mode: "new")
             }
-            claudeMenuItem(title: "Continue", subtitle: "Last conversation", icon: "arrow.right.circle.fill", color: .blue) {
+            claudeMenuItem(title: L10n.shared.continueTitle, subtitle: L10n.shared.lastConversation, icon: "arrow.right.circle.fill", color: .blue) {
                 launchClaude(mode: "continue")
             }
-            claudeMenuItem(title: "Resume", subtitle: "Pick a conversation", icon: "clock.arrow.circlepath", color: .orange) {
+            claudeMenuItem(title: L10n.shared.resumeTitle, subtitle: L10n.shared.pickConversation, icon: "clock.arrow.circlepath", color: .orange) {
                 launchClaude(mode: "resume")
             }
 
             Divider().padding(.vertical, 4)
 
             Toggle(isOn: $claudeUseChrome) {
-                Label("Use Chrome", systemImage: "globe")
+                Label(L10n.shared.useChrome, systemImage: "globe")
                     .font(.system(size: 12))
             }
             .toggleStyle(.switch)
@@ -297,7 +342,7 @@ struct PanelContentView: View {
             .padding(.vertical, 4)
 
             Toggle(isOn: $claudeSkipPermissions) {
-                Label("Skip Permissions", systemImage: "exclamationmark.shield.fill")
+                Label(L10n.shared.skipPermissions, systemImage: "exclamationmark.shield.fill")
                     .font(.system(size: 12))
             }
             .toggleStyle(.switch)
@@ -305,17 +350,25 @@ struct PanelContentView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
 
-            Divider().padding(.vertical, 4)
+        }
+        .padding(.vertical, 8)
+        .frame(width: 220)
+    }
 
-            Text("Theme")
+    @ViewBuilder
+    private var settingsMenuContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(L10n.shared.theme)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(.secondary)
                 .padding(.horizontal, 12)
+                .padding(.bottom, 4)
 
             ForEach(TerminalTheme.allThemes) { theme in
                 Button {
                     TerminalManager.shared.setTheme(theme.id)
                     selectedThemeId = theme.id
+                    sessionStore.currentTheme = theme
                 } label: {
                     HStack(spacing: 8) {
                         RoundedRectangle(cornerRadius: 3)
@@ -340,6 +393,132 @@ struct PanelContentView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 2)
             }
+
+            Divider().padding(.vertical, 6)
+
+            Text(L10n.shared.fontSize)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
+
+            HStack(spacing: 6) {
+                Button(action: {
+                    TerminalManager.shared.decreaseFontSize()
+                    currentFontSize = TerminalManager.shared.fontSize
+                }) {
+                    Image(systemName: "minus")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 28, height: 28)
+                        .background(Color.white.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Text("\(Int(currentFontSize))pt")
+                    .font(.system(size: 12, design: .monospaced))
+                    .frame(width: 36)
+
+                Button(action: {
+                    TerminalManager.shared.increaseFontSize()
+                    currentFontSize = TerminalManager.shared.fontSize
+                }) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 28, height: 28)
+                        .background(Color.white.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Button {
+                    TerminalManager.shared.resetFontSize()
+                    currentFontSize = TerminalManager.shared.fontSize
+                } label: {
+                    Text(L10n.shared.reset)
+                        .font(.system(size: 11))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 12)
+
+            Divider().padding(.vertical, 6)
+
+            Text(L10n.shared.languageLabel)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
+
+            ForEach(AppLanguage.allCases, id: \.rawValue) { lang in
+                Button {
+                    L10n.shared.language = lang
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(lang.displayName)
+                            .font(.system(size: 12))
+                        Spacer()
+                        if lang == L10n.shared.language {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.accentColor)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 2)
+            }
+
+            Divider().padding(.vertical, 6)
+
+            Button {
+                FullDiskAccessChecker.resetDismissal()
+                FullDiskAccessChecker.showDialog()
+                showSettings = false
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "lock.shield")
+                        .font(.system(size: 12))
+                    Text(L10n.shared.fullDiskAccess)
+                        .font(.system(size: 12))
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+
+            Button {
+                NotificationCenter.default.post(name: .NotchyCheckForUpdates, object: nil)
+                showSettings = false
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 12))
+                    Text(L10n.shared.checkForUpdates)
+                        .font(.system(size: 12))
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
         }
         .padding(.vertical, 8)
         .frame(width: 220)
@@ -369,7 +548,7 @@ struct PanelContentView: View {
     }
 
     private func placeholderView(_ message: String) -> some View {
-        Color(nsColor: NSColor(white: 0.1, alpha: 1.0))
+        Color(nsColor: theme.background)
             .overlay {
                 Text(message)
                     .font(.system(size: 13))

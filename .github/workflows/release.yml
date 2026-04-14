@@ -5,14 +5,27 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Resolve dependencies
         run: xcodebuild -project Notchy.xcodeproj -scheme Notchy -resolvePackageDependencies
@@ -24,10 +37,29 @@ jobs:
             -configuration Release \
             -derivedDataPath build-release \
             -destination "generic/platform=macOS" \
+            MARKETING_VERSION="${{ steps.version.outputs.version }}" \
+            CURRENT_PROJECT_VERSION="${{ steps.version.outputs.version }}" \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             SWIFT_STRICT_CONCURRENCY=minimal \
             build
+
+      - name: Re-sign embedded frameworks
+        run: |
+          APP_PATH="build-release/Build/Products/Release/Notchly.app"
+          find "$APP_PATH/Contents/Frameworks" -type f -perm +111 -o -name "*.dylib" | while read -r binary; do
+            codesign --force --sign - --timestamp=none "$binary" 2>/dev/null || true
+          done
+          find "$APP_PATH/Contents/Frameworks" -name "*.framework" -type d | while read -r fw; do
+            codesign --force --sign - --deep --timestamp=none "$fw" 2>/dev/null || true
+          done
+          find "$APP_PATH/Contents/Frameworks" -name "*.app" -type d | while read -r subapp; do
+            codesign --force --sign - --deep --timestamp=none "$subapp" 2>/dev/null || true
+          done
+          find "$APP_PATH/Contents/Frameworks" -name "*.xpc" -type d | while read -r xpc; do
+            codesign --force --sign - --deep --timestamp=none "$xpc" 2>/dev/null || true
+          done
+          codesign --force --sign - --deep --timestamp=none "$APP_PATH"
 
       - name: Create DMG
         run: |
@@ -39,10 +71,68 @@ jobs:
             -ov -format UDZO \
             Notchly.dmg
 
+      - name: Locate Sparkle sign_update
+        id: sparkle
+        run: |
+          SIGN_UPDATE=$(find build-release/SourcePackages -name sign_update -type f | head -n1)
+          if [ -z "$SIGN_UPDATE" ]; then
+            echo "sign_update not found"
+            exit 1
+          fi
+          echo "sign_update=$SIGN_UPDATE" >> $GITHUB_OUTPUT
+
+      - name: Sign update with EdDSA
+        id: sign
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SPARKLE_PRIVATE_KEY" ]; then
+            echo "SPARKLE_PRIVATE_KEY secret is not set"
+            exit 1
+          fi
+          KEY_FILE=$(mktemp)
+          echo "$SPARKLE_PRIVATE_KEY" > "$KEY_FILE"
+          SIGNATURE_LINE=$("${{ steps.sparkle.outputs.sign_update }}" -f "$KEY_FILE" Notchly.dmg)
+          rm -f "$KEY_FILE"
+          echo "signature_line=$SIGNATURE_LINE" >> $GITHUB_OUTPUT
+          FILE_SIZE=$(stat -f%z Notchly.dmg)
+          echo "file_size=$FILE_SIZE" >> $GITHUB_OUTPUT
+
       - name: Create Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ github.ref_name }}" Notchly.dmg \
-            --title "Notchly ${{ github.ref_name }}" \
+          gh release create "${{ steps.version.outputs.tag }}" Notchly.dmg \
+            --title "Notchly ${{ steps.version.outputs.tag }}" \
             --generate-notes
+
+      - name: Update appcast.xml
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          FILE_SIZE="${{ steps.sign.outputs.file_size }}"
+          SIGNATURE_LINE='${{ steps.sign.outputs.signature_line }}'
+          DMG_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/Notchly.dmg"
+          PUB_DATE=$(date -u "+%a, %d %b %Y %H:%M:%S +0000")
+          RELEASE_NOTES_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+
+          python3 scripts/update-appcast.py \
+            --version "$VERSION" \
+            --pub-date "$PUB_DATE" \
+            --url "$DMG_URL" \
+            --length "$FILE_SIZE" \
+            --signature-line "$SIGNATURE_LINE" \
+            --release-notes-url "$RELEASE_NOTES_URL"
+
+      - name: Commit appcast.xml
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout main
+          git add appcast.xml
+          if git diff --cached --quiet; then
+            echo "No appcast changes to commit"
+          else
+            git commit -m "chore: update appcast for ${{ steps.version.outputs.tag }}"
+            git push origin main
+          fi

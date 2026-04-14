@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 struct StoredCommand: Codable {
     var text: String
@@ -42,6 +43,16 @@ class CommandStore {
             } else {
                 cmds.append(StoredCommand(text: command, count: 1, lastUsed: Date()))
             }
+            self.cache[directory] = cmds
+            self.saveCommands(cmds, for: directory)
+        }
+    }
+
+    func deleteCommand(_ command: String, in directory: String) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            var cmds = self._commands(for: directory)
+            cmds.removeAll { $0.text == command }
             self.cache[directory] = cmds
             self.saveCommands(cmds, for: directory)
         }
@@ -95,10 +106,8 @@ class CommandStore {
     // MARK: - Private
 
     private func filePath(for directory: String) -> URL {
-        let hash = directory.data(using: .utf8)!
-            .map { String(format: "%02x", $0) }
-            .joined()
-            .prefix(40)
+        let digest = SHA256.hash(data: Data(directory.utf8))
+        let hash = digest.map { String(format: "%02x", $0) }.joined()
         return baseDir.appendingPathComponent("\(hash).json")
     }
 

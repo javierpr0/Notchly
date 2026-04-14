@@ -86,16 +86,17 @@ class TerminalPanel: NSPanel {
     }
 
     private var lastKnownWidth: CGFloat = 0
+    private var lastKnownCenterX: CGFloat = 0
 
     @objc private func handleDidResize() {
         guard !isAdjustingFrame && lastKnownWidth > 0 && frame.width != lastKnownWidth else {
             lastKnownWidth = frame.width
+            lastKnownCenterX = frame.origin.x + frame.width / 2
             return
         }
         isAdjustingFrame = true
-        let centerX = frame.origin.x + lastKnownWidth / 2
         var newFrame = frame
-        newFrame.origin.x = centerX - frame.width / 2
+        newFrame.origin.x = lastKnownCenterX - frame.width / 2
         if let screen = screen ?? NSScreen.main {
             let visibleFrame = screen.visibleFrame
             newFrame.origin.x = max(visibleFrame.minX, newFrame.origin.x)
@@ -103,6 +104,7 @@ class TerminalPanel: NSPanel {
         }
         super.setFrameOrigin(newFrame.origin)
         lastKnownWidth = frame.width
+        lastKnownCenterX = newFrame.origin.x + frame.width / 2
         isAdjustingFrame = false
         persistSize()
     }
@@ -260,6 +262,16 @@ class TerminalPanel: NSPanel {
             TerminalManager.shared.resetFontSize()
             return true
         }
+        // Cmd+F → search in terminal
+        if mods == .command && chars == "f" {
+            toggleSearch()
+            return true
+        }
+        // Cmd+P → command palette
+        if mods == .command && chars == "p" {
+            sessionStore.showCommandPalette.toggle()
+            return true
+        }
         // Cmd+Shift+Left/Right → move active tab
         if mods == [.command, .shift] {
             if event.keyCode == 123, let id = sessionStore.activeSessionId {
@@ -272,6 +284,16 @@ class TerminalPanel: NSPanel {
             }
         }
         return super.performKeyEquivalent(with: event)
+    }
+
+    private func toggleSearch() {
+        guard let paneId = sessionStore.activeSession?.focusedPaneId,
+              let terminal = TerminalManager.shared.terminals[paneId] as? ClickThroughTerminalView else { return }
+        if terminal.searchController.isVisible {
+            terminal.searchController.hide()
+        } else {
+            terminal.searchController.show(in: terminal)
+        }
     }
 
     deinit {

@@ -1,6 +1,11 @@
 import AppKit
 import SwiftTerm
 
+struct PaneCompletionInfo {
+    let summary: String
+    let hadError: Bool
+}
+
 class ClickThroughTerminalView: LocalProcessTerminalView {
     var sessionId: UUID?
     private var keyMonitor: Any?
@@ -19,6 +24,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     private static let promptCharacters: Set<Character> = ["$", "%", ">"]
 
     private var mouseUpMonitor: Any?
+    private(set) lazy var searchController = TerminalSearchController()
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -33,6 +39,31 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         installClickMonitor()
         installRightClickMonitor()
         installMouseUpMonitor()
+        installScrollMonitor()
+    }
+
+    private var scrollMonitor: Any?
+
+    func installScrollMonitor() {
+        guard scrollMonitor == nil else { return }
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self,
+                  self.window != nil,
+                  let eventWindow = event.window,
+                  eventWindow == self.window else { return event }
+
+            let locationInView = self.convert(event.locationInWindow, from: nil)
+            guard self.bounds.contains(locationInView) else { return event }
+
+            let terminal = self.getTerminal()
+            guard terminal.mouseMode != .off, event.deltaY != 0 else { return event }
+
+            let lines = event.deltaY > 0 ? Int(max(1, event.deltaY)) : Int(min(-1, event.deltaY))
+            let count = abs(lines)
+            let arrow = lines > 0 ? "\u{1b}[A" : "\u{1b}[B"
+            self.send(txt: String(repeating: arrow, count: count))
+            return nil
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -42,6 +73,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         installClickMonitor()
         installRightClickMonitor()
         installMouseUpMonitor()
+        installScrollMonitor()
     }
 
     deinit {
@@ -55,6 +87,9 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
             NSEvent.removeMonitor(monitor)
         }
         if let monitor = mouseUpMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        if let monitor = scrollMonitor {
             NSEvent.removeMonitor(monitor)
         }
     }
@@ -253,6 +288,10 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         triggerAutocomplete()
     }
 
+    private static let errorPatterns: [String] = ["error:", "failed", "permission denied"]
+    private static let errorSymbols: Set<Character> = ["\u{2717}", "\u{2718}"]
+    private static let successSymbols: Set<Character> = ["\u{2713}", "\u{2714}"]
+
     private func evaluateStatus(for id: UUID) {
         guard let visibleText = extractVisibleText() else { return }
         let fullText = extractFullVisibleText() ?? visibleText
@@ -263,18 +302,46 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
             newStatus = .working
         }
         else if fullText.contains("Esc to cancel") {
-            // Claude needs a decision (tool permission, file edit, etc.)
             newStatus = .waitingForInput
         } else if visibleText.contains("Interrupted") {
             newStatus = .interrupted
         } else {
-            // Includes Claude's ❯ prompt (task finished) and shell prompt
             newStatus = .idle
         }
 
+        let summary: String? = (newStatus == .idle) ? Self.extractSummary(from: visibleText) : nil
+        let hadError: Bool = (newStatus == .idle) ? Self.detectError(in: visibleText) : false
+
         Task { @MainActor in
+            if let summary {
+                SessionStore.shared.paneCompletionInfo[id] = PaneCompletionInfo(summary: summary, hadError: hadError)
+            }
             SessionStore.shared.updateTerminalStatus(id, status: newStatus)
         }
+    }
+
+    private static func extractSummary(from text: String) -> String? {
+        let separator = "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}"
+        let lines = text.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix(separator) }
+        guard let last = lines.last else { return nil }
+        return String(last.prefix(100))
+    }
+
+    private static func detectError(in text: String) -> Bool {
+        let lines = text.components(separatedBy: "\n")
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let lower = trimmed.lowercased()
+            for pattern in errorPatterns {
+                if lower.contains(pattern) { return true }
+            }
+            if let first = trimmed.first {
+                if errorSymbols.contains(first) { return true }
+            }
+        }
+        return false
     }
 
     /// Checks whether the text contains a Claude spinner character (visible during working state)
@@ -590,13 +657,13 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
 
         if let block = findCommandBlock(at: absoluteRow),
            let outputText = extractOutputText(from: block) {
-            let copyOutput = NSMenuItem(title: "Copy Output", action: #selector(copyBlockOutput(_:)), keyEquivalent: "")
+            let copyOutput = NSMenuItem(title: L10n.shared.copyOutput, action: #selector(copyBlockOutput(_:)), keyEquivalent: "")
             copyOutput.representedObject = outputText
             copyOutput.target = self
             menu.addItem(copyOutput)
 
             if let cmdLine = readBufferLine(absoluteRow: block.promptRow) {
-                let copyCmd = NSMenuItem(title: "Copy Command", action: #selector(copyBlockOutput(_:)), keyEquivalent: "")
+                let copyCmd = NSMenuItem(title: L10n.shared.copyCommand, action: #selector(copyBlockOutput(_:)), keyEquivalent: "")
                 let trimmed = cmdLine.trimmingCharacters(in: .whitespaces)
                 var cmdText = trimmed
                 for (index, char) in trimmed.enumerated() {
@@ -616,7 +683,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
             menu.addItem(.separator())
         }
 
-        let paste = NSMenuItem(title: "Paste", action: #selector(pasteFromClipboard), keyEquivalent: "")
+        let paste = NSMenuItem(title: L10n.shared.paste, action: #selector(pasteFromClipboard), keyEquivalent: "")
         paste.target = self
         menu.addItem(paste)
 
@@ -653,7 +720,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         return saved > 0 ? saved : Self.defaultFontSize
     }
 
-    private var terminals: [UUID: LocalProcessTerminalView] = [:]
+    private(set) var terminals: [UUID: LocalProcessTerminalView] = [:]
 
     func terminal(for sessionId: UUID, workingDirectory: String, launchClaude: Bool = true, customCommand: String? = nil) -> LocalProcessTerminalView {
         if let existing = terminals[sessionId] {
@@ -664,6 +731,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         terminal.sessionId = sessionId
         terminal.processDelegate = self
         terminal.setWorkingDirectory(workingDirectory)
+        terminal.optionAsMetaKey = false
         terminal.terminal.changeScrollback(newScrollback: 10_000)
 
         terminal.font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
@@ -707,6 +775,12 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
     func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
 
     func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
+
+    func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
+        guard NSApp.currentEvent?.modifierFlags.contains(.command) == true,
+              let url = URL(string: link) else { return }
+        NSWorkspace.shared.open(url)
+    }
 
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {
         guard let dir = directory,
@@ -810,6 +884,9 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
             terminal.selectedTextBackgroundColor = theme.selection
             terminal.installColors(theme.swiftTermColors())
             terminal.setNeedsDisplay(terminal.bounds)
+        }
+        Task { @MainActor in
+            SessionStore.shared.currentTheme = theme
         }
     }
 }

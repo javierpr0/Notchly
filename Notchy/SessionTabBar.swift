@@ -180,7 +180,7 @@ struct SessionTab: View {
                 .foregroundColor(.green)
         case .idle, .interrupted:
             Circle()
-                .fill(Color.white.opacity(0.2))
+                .fill(Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(0.2))
                 .frame(width: 5, height: 5)
         }
     }
@@ -207,7 +207,7 @@ struct SessionTab: View {
                     Text(name)
                         .font(.system(size: 11, weight: isActive ? .medium : .regular))
                         .lineLimit(1)
-                        .foregroundColor(.white.opacity(isActive ? foregroundOpacity : foregroundOpacity * 0.6))
+                        .foregroundColor(Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(isActive ? foregroundOpacity : foregroundOpacity * 0.6))
                 }
             }
 
@@ -215,9 +215,9 @@ struct SessionTab: View {
                 Button(action: onClose) {
                     Image(systemName: "xmark")
                         .font(.system(size: 7, weight: .bold))
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(0.5))
                         .frame(width: 12, height: 12)
-                        .background(Color.white.opacity(0.1))
+                        .background(Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(0.1))
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -228,8 +228,8 @@ struct SessionTab: View {
         .background(
             RoundedRectangle(cornerRadius: 5)
                 .fill(isActive
-                    ? Color.white.opacity(0.1)
-                    : isHovering ? Color.white.opacity(0.05) : Color.clear)
+                    ? Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(0.1)
+                    : isHovering ? Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(0.05) : Color.clear)
         )
         .onHover { hovering in
             isHovering = hovering
@@ -245,12 +245,12 @@ struct SessionTab: View {
         .onTapGesture(perform: onSelect)
         .contextMenu {
             if session.projectPath != nil {
-                Button("Save Checkpoint") {
+                Button(L10n.shared.saveCheckpoint) {
                     SessionStore.shared.createCheckpoint(for: session.id)
                 }
 
                 if latestCheckpoint != nil {
-                    Button("Restore Last Checkpoint") {
+                    Button(L10n.shared.restoreLastCheckpointMenu) {
                         showRestoreConfirmation = true
                     }
                 }
@@ -259,31 +259,31 @@ struct SessionTab: View {
             }
 
             if canMoveLeft {
-                Button("Move Left") {
+                Button(L10n.shared.moveLeft) {
                     onMoveLeft?()
                 }
             }
             if canMoveRight {
-                Button("Move Right") {
+                Button(L10n.shared.moveRight) {
                     onMoveRight?()
                 }
             }
 
             Divider()
 
-            Button("Session History") {
+            Button(L10n.shared.sessionHistory) {
                 showHistory()
             }
 
-            Button("Rename Tab") {
+            Button(L10n.shared.renameTab) {
                 startRename()
             }
 
-            Button("Restart") {
+            Button(L10n.shared.restart) {
                 SessionStore.shared.restartSession(session.id)
             }
 
-            Button("Close", role: .destructive) {
+            Button(L10n.shared.close, role: .destructive) {
                 onClose()
             }
         }
@@ -295,17 +295,17 @@ struct SessionTab: View {
                 refreshLatestCheckpoint()
             }
         }
-        .alert("Restore Last Checkpoint", isPresented: $showRestoreConfirmation) {
-            Button("Restore", role: .destructive) {
+        .alert(L10n.shared.restoreLastCheckpointMenu, isPresented: $showRestoreConfirmation) {
+            Button(L10n.shared.restore, role: .destructive) {
                 if let checkpoint = latestCheckpoint {
                     guard let dir = session.projectPath else { return }
                     let projectDir = (dir as NSString).deletingLastPathComponent
                     try? CheckpointManager.shared.restoreCheckpoint(checkpoint, to: projectDir)
                 }
             }
-            Button("Cancel", role: .cancel) {}
+            Button(L10n.shared.cancel, role: .cancel) {}
         } message: {
-            Text("This will overwrite your current working directory with the checkpoint. Are you sure?")
+            Text(L10n.shared.restoreCheckpointMessage)
         }
         .onChange(of: isRenaming) {
             SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation
@@ -327,7 +327,7 @@ struct TabSpinnerView: View {
     var body: some View {
         Circle()
             .trim(from: 0.05, to: 0.8)
-            .stroke(Color.white, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+            .stroke(Color(nsColor: SessionStore.shared.currentTheme.chromeForeground), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
             .rotationEffect(.degrees(isAnimating ? 360 : 0))
             .animation(.linear(duration: 0.8).repeatForever(autoreverses: false), value: isAnimating)
             .onAppear { isAnimating = true }

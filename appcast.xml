@@ -5,14 +5,14 @@
         <link>https://github.com/javierpr0/notchly</link>
         <description>Most recent changes with links to updates.</description>
         <language>en</language>
-            <item>
+        <item>
             <title>Version 0.18.0</title>
             <sparkle:version>0.18.0</sparkle:version>
             <sparkle:shortVersionString>0.18.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:releaseNotesLink>https://github.com/javierpr0/Notchly/releases/tag/v0.18.0</sparkle:releaseNotesLink>
-            <pubDate>Tue, 14 Apr 2026 01:09:08 +0000</pubDate>
-            <enclosure url="https://github.com/javierpr0/Notchly/releases/download/v0.18.0/Notchly.dmg" sparkle:edSignature="AGyk/UrqJBN1l+Uz3V9nZoz4TLTVnBMylavsglp93czg8jpfcK7lb2TgTZEyS4nlDpAP5mGpu5a5htpol0ORCQ==" length="3995601" type="application/octet-stream"/>
+            <pubDate>Tue, 14 Apr 2026 01:13:36 +0000</pubDate>
+            <enclosure url="https://github.com/javierpr0/Notchly/releases/download/v0.18.0/Notchly.dmg" sparkle:edSignature="erEwPow2d35iqTF1hiqAw2rjl4dFa3xzuIgDTIOrc4gctW6bOQmXi8SjxsYXXEe/iWzUPstzojhfW1qiGDGUDQ==" length="3999831" type="application/octet-stream"/>
         </item>
         <item>
             <title>Version 0.17.0</title>

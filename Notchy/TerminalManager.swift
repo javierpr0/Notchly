@@ -627,11 +627,13 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
                 NSPasteboard.general.setString(text, forType: .string)
             }
 
-            // Strip the Command modifier so SwiftTerm never takes its link-opening
-            // path (which calls NSWorkspace.open on implicit matches like
-            // "./scripts/foo.sh" and shows a Finder error popup). Opening paths in
-            // Finder is available through the right-click context menu instead.
+            // When Command is held, SwiftTerm would call requestOpenLink → NSWorkspace.open
+            // on whatever implicit match it finds under the cursor. That works great for
+            // real URLs, but for local file paths like "./scripts/foo.sh" it shows a
+            // Finder "-50" error popup. So we only strip the Command modifier when the
+            // token under the cursor is NOT a real URL; real URLs still open on ⌘-click.
             if event.modifierFlags.contains(.command),
+               !self.isRealURLUnder(event: event),
                let stripped = NSEvent.mouseEvent(
                    with: event.type,
                    location: event.locationInWindow,
@@ -647,6 +649,62 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
             }
             return event
         }
+    }
+
+    private static let urlSchemePrefixes = ["http://", "https://", "mailto:", "ftp://", "ftps://", "ssh://"]
+
+    /// Returns true if the token under the click position starts with a real URL scheme
+    /// (http, https, mailto, ftp, ssh). Used to decide whether to preserve Cmd+click's
+    /// default link-opening behavior vs. suppress it (for local file paths).
+    private func isRealURLUnder(event: NSEvent) -> Bool {
+        let terminal = getTerminal()
+        guard terminal.cols > 0, terminal.rows > 0 else { return false }
+
+        let point = convert(event.locationInWindow, from: nil)
+        let cellHeight = frame.height / CGFloat(terminal.rows)
+        let cellWidth = frame.width / CGFloat(terminal.cols)
+        guard cellHeight > 0, cellWidth > 0 else { return false }
+
+        let viewportRow = Int((frame.height - point.y) / cellHeight)
+        guard viewportRow >= 0, viewportRow < terminal.rows else { return false }
+
+        let col = Int(point.x / cellWidth)
+        guard col >= 0 else { return false }
+
+        let absoluteRow = viewportRow + terminal.buffer.yDisp
+        guard let line = readBufferLine(absoluteRow: absoluteRow) else { return false }
+
+        // Find the whitespace-delimited token that contains column `col`.
+        var start = line.startIndex
+        var cursor = 0
+        var end = line.endIndex
+        var foundStart: String.Index? = nil
+        for idx in line.indices {
+            let ch = line[idx]
+            if ch == " " || ch == "\t" {
+                if let s = foundStart, cursor > col {
+                    start = s
+                    end = idx
+                    foundStart = nil
+                    break
+                }
+                foundStart = nil
+            } else if foundStart == nil {
+                foundStart = idx
+            }
+            if cursor == col, let s = foundStart {
+                start = s
+            }
+            cursor += 1
+        }
+        if let s = foundStart, cursor >= col {
+            start = s
+            end = line.endIndex
+        }
+
+        let token = String(line[start..<end]).trimmingCharacters(in: CharacterSet(charactersIn: "\"'()[],;"))
+        let lower = token.lowercased()
+        return Self.urlSchemePrefixes.contains { lower.hasPrefix($0) }
     }
 
     private func installRightClickMonitor() {

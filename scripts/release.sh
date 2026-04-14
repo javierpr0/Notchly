@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-REMOTE="fork"
+REMOTE="${NOTCHLY_RELEASE_REMOTE:-origin}"
 CHANGELOG="$(cd "$(dirname "$0")/.." && pwd)/CHANGELOG.md"
 
 # --- Determine version ---

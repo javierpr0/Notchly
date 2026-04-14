@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-04-13
+
+### Changed
+- Terminal scrollback buffer increased from 500 to 10,000 lines so full session history stays visible when scrolling up
+
 ## [0.17.0] - 2026-04-09
 
 ### Added
@@ -172,7 +177,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global backtick hotkey to toggle panel
 - Pin panel open option
 
-[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/javierpr0/notchly/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/javierpr0/notchly/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/javierpr0/notchly/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/javierpr0/notchly/compare/v0.14.0...v0.15.0

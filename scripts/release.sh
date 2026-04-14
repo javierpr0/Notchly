@@ -68,21 +68,26 @@ if [ "$TAG_EXISTS_LOCAL" = "1" ] || [ "$TAG_EXISTS_REMOTE" = "1" ]; then
 
     echo "==> --force: limpiando tag y release previos para $TAG..."
 
-    # Delete GitHub release if present (requires gh CLI)
+    # Delete GitHub release if present (requires gh CLI).
+    # Note: `gh release delete --cleanup-tag` also removes the associated git tag
+    # on the remote, and sometimes the local tag too — so we re-check before
+    # deleting tags ourselves.
     if command -v gh >/dev/null 2>&1; then
         if gh release view "$TAG" >/dev/null 2>&1; then
             echo "  Borrando GitHub Release $TAG..."
-            gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || gh release delete "$TAG" --yes
+            gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null \
+                || gh release delete "$TAG" --yes 2>/dev/null \
+                || true
         fi
     fi
 
-    if [ "$TAG_EXISTS_REMOTE" = "1" ]; then
+    if git ls-remote --tags "$REMOTE" "refs/tags/${TAG}" | grep -q "$TAG"; then
         echo "  Borrando tag remoto $TAG..."
         git push "$REMOTE" --delete "$TAG" 2>/dev/null || true
     fi
-    if [ "$TAG_EXISTS_LOCAL" = "1" ]; then
+    if git tag -l "$TAG" | grep -q "^${TAG}$"; then
         echo "  Borrando tag local $TAG..."
-        git tag -d "$TAG" >/dev/null
+        git tag -d "$TAG" >/dev/null 2>&1 || true
     fi
     echo "  Limpieza OK"
     echo ""

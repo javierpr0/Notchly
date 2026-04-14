@@ -664,6 +664,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         terminal.sessionId = sessionId
         terminal.processDelegate = self
         terminal.setWorkingDirectory(workingDirectory)
+        terminal.terminal.changeScrollback(newScrollback: 10_000)
 
         terminal.font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         applyTheme(to: terminal)

@@ -143,6 +143,22 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
                 return nil
             }
 
+            // Option+<key> should produce the Latin character the OS generates
+            // (e.g. Option+2 → @ on Spanish ISO layouts, Option+N → ñ, etc.),
+            // not a Meta escape sequence. SwiftTerm's optionAsMetaKey=false doesn't
+            // cover every layout reliably, so we forward event.characters ourselves
+            // when Option (alone or with Shift) is held and the result is printable.
+            if event.modifierFlags.contains(.option),
+               !event.modifierFlags.contains(.command),
+               !event.modifierFlags.contains(.control),
+               let characters = event.characters,
+               !characters.isEmpty,
+               let first = characters.unicodeScalars.first,
+               first.value >= 0x20, first.value != 0x7F {
+                self.send(txt: characters)
+                return nil
+            }
+
             // Enter without overlay — record the command being executed
             if event.keyCode == 36 {
                 self.recordCurrentCommand()

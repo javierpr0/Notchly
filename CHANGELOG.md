@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-04-23
+
+### Fixed
+- Commands are now scoped to the session project root, not whichever directory the shell is currently in, so the palette and autocomplete see the same entries you recorded even after `cd`-ing into subfolders.
+- Command history import no longer overwrites commands recorded while zsh history was being read in the background — the merge now happens against a fresh snapshot, so recent entries survive app restarts.
+- Ghost text autocomplete now aligns exactly with the terminal grid. Cell width is computed using the same glyph advancement + pixel-snap formula SwiftTerm uses internally, fixing the drift that grew as the cursor moved right.
+
 ## [0.19.0] - 2026-04-13
 
 ### Fixed
@@ -182,7 +189,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global backtick hotkey to toggle panel
 - Pin panel open option
 
-[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/javierpr0/notchly/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/javierpr0/notchly/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/javierpr0/notchly/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/javierpr0/notchly/compare/v0.16.0...v0.17.0

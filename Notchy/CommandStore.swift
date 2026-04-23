@@ -63,30 +63,32 @@ class CommandStore {
             guard let self else { return }
             guard !self.historyImported else { return }
             self.historyImported = true
-            let existingCmds = self._commands(for: directory)
 
+            // Read zsh history off the serial queue (it's slow I/O).
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 guard let self else { return }
-
-                var cmds = existingCmds
-                let existingTexts = Set(cmds.map(\.text))
-
-                // Seed with common default commands if this is a fresh directory
-                if cmds.isEmpty {
-                    for cmd in Self.defaultCommands where !existingTexts.contains(cmd) {
-                        cmds.append(StoredCommand(text: cmd, count: 1, lastUsed: Date.distantPast))
-                    }
-                }
-
-                // Import zsh history
                 let historyCommands = self.readZshHistory()
-                let updatedTexts = Set(cmds.map(\.text))
-                for cmd in historyCommands where !updatedTexts.contains(cmd) {
-                    cmds.append(StoredCommand(text: cmd, count: 1, lastUsed: Date.distantPast))
-                }
 
+                // Merge back on the serial queue against a FRESH snapshot of cmds,
+                // so commands recorded via recordCommand() while we were reading
+                // zsh history are preserved (they hit the serial queue first).
                 self.queue.async { [weak self] in
                     guard let self else { return }
+                    var cmds = self._commands(for: directory)
+                    var seen = Set(cmds.map(\.text))
+
+                    if cmds.isEmpty {
+                        for cmd in Self.defaultCommands where !seen.contains(cmd) {
+                            cmds.append(StoredCommand(text: cmd, count: 1, lastUsed: Date.distantPast))
+                            seen.insert(cmd)
+                        }
+                    }
+
+                    for cmd in historyCommands where !seen.contains(cmd) {
+                        cmds.append(StoredCommand(text: cmd, count: 1, lastUsed: Date.distantPast))
+                        seen.insert(cmd)
+                    }
+
                     self.cache[directory] = cmds
                     self.saveCommands(cmds, for: directory)
                 }

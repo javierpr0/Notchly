@@ -19,6 +19,11 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     private var autocompleteDebounceTimer: Timer?
     private var lastPromptInput: String = ""
     private var currentWorkingDir: String?
+    // Stable directory used for CommandStore scoping (persistence + palette).
+    // Set once when the pane spawns and NOT updated when the user runs `cd`,
+    // so commands stay scoped to the project root, matching what the palette
+    // reads (session.projectPath).
+    private var commandStoreDirectory: String?
     private var ghostView: GhostTextView?
     private var currentGhostSuggestion: String?
     private static let promptCharacters: Set<Character> = ["$", "%", ">"]
@@ -389,6 +394,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
 
     func setWorkingDirectory(_ dir: String) {
         currentWorkingDir = dir
+        commandStoreDirectory = dir
         CommandStore.shared.importHistoryIfNeeded(for: dir)
     }
 
@@ -408,7 +414,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     }
 
     private func evaluateAutocomplete() {
-        guard let dir = currentWorkingDir else { return }
+        guard let dir = commandStoreDirectory else { return }
         guard let input = extractPromptInput() else {
             clearGhostText()
             lastPromptInput = ""
@@ -454,22 +460,45 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         gv.font = font ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
         gv.ghostText = remaining
 
-        // Position at cursor
+        // Position at cursor. Use the same cell metrics SwiftTerm uses internally
+        // (advancement of a monospaced glyph + ascent/descent/leading), otherwise
+        // `frame.width / cols` drifts the further right the cursor moves because
+        // SwiftTerm rounds each cell to the pixel grid and we don't.
         let terminal = getTerminal()
         let cursor = terminal.getCursorLocation()
         guard terminal.cols > 0, terminal.rows > 0 else { return }
 
-        let scrollerWidth = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .overlay)
-        let contentWidth = frame.width - scrollerWidth
-        let cellWidth = contentWidth / CGFloat(terminal.cols)
-        let cellHeight = frame.height / CGFloat(terminal.rows)
+        let cell = computeCellSize()
+        guard cell.width > 0, cell.height > 0 else { return }
 
-        let x = cellWidth * CGFloat(cursor.x)
-        // AppKit coordinates: y=0 is bottom, so invert
-        let y = frame.height - cellHeight * CGFloat(cursor.y + 1)
+        let x = cell.width * CGFloat(cursor.x)
+        // AppKit coordinates: y=0 is bottom, so invert.
+        let y = frame.height - cell.height * CGFloat(cursor.y + 1)
 
         let size = gv.intrinsicContentSize
-        gv.frame = NSRect(x: x, y: y, width: size.width, height: cellHeight)
+        gv.frame = NSRect(x: x, y: y, width: size.width, height: cell.height)
+    }
+
+    /// Mirrors SwiftTerm's internal cell dimension calculation so ghost text aligns
+    /// exactly with the terminal grid.
+    private func computeCellSize() -> CGSize {
+        let font = self.font
+        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
+
+        let ctFont = font as CTFont
+        var chars: [UniChar] = Array("W".utf16)
+        var glyphs: [CGGlyph] = Array(repeating: 0, count: chars.count)
+        CTFontGetGlyphsForCharacters(ctFont, &chars, &glyphs, chars.count)
+        var advancement = CGSize.zero
+        CTFontGetAdvancesForGlyphs(ctFont, .horizontal, glyphs, &advancement, 1)
+        let snappedWidth = ceil(advancement.width * scale) / scale
+
+        let ascent = CTFontGetAscent(ctFont)
+        let descent = CTFontGetDescent(ctFont)
+        let leading = CTFontGetLeading(ctFont)
+        let height = ceil(ascent + descent + leading)
+
+        return CGSize(width: max(1, snappedWidth), height: max(1, height))
     }
 
     private func clearGhostText() {
@@ -497,7 +526,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
             send(txt: backspaces + command)
         }
 
-        if let dir = currentWorkingDir {
+        if let dir = commandStoreDirectory {
             CommandStore.shared.recordCommand(command, in: dir)
         }
     }
@@ -547,7 +576,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     }
 
     private func recordCurrentCommand() {
-        guard let dir = currentWorkingDir,
+        guard let dir = commandStoreDirectory,
               let input = extractPromptInput(),
               input.count >= 2 else { return }
         CommandStore.shared.recordCommand(input, in: dir)

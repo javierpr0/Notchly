@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Commands are now scoped to the session project root, not whichever directory the shell is currently in, so the palette and autocomplete see the same entries you recorded even after `cd`-ing into subfolders.
 - Command history import no longer overwrites commands recorded while zsh history was being read in the background — the merge now happens against a fresh snapshot, so recent entries survive app restarts.
 - Ghost text autocomplete now aligns exactly with the terminal grid. Cell width is computed using the same glyph advancement + pixel-snap formula SwiftTerm uses internally, fixing the drift that grew as the cursor moved right.
+- Keyboard focus now returns to the active terminal pane after the panel regains key status and after clicks on SwiftUI chrome (tabs, buttons), so typing no longer silently disappears until the user clicks back inside the terminal.
 
 ## [0.19.0] - 2026-04-13
 

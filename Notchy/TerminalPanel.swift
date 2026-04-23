@@ -175,6 +175,17 @@ class TerminalPanel: NSPanel {
 
     @objc private func windowDidBecomeKey(_ notification: Notification) {
         updateOpacity()
+        // Restore keyboard focus to the active terminal pane. Without this, typing
+        // goes to whatever SwiftUI control happens to hold firstResponder (often
+        // nothing), so characters disappear until the user clicks on the terminal.
+        // Defer one runloop tick so SwiftUI's own firstResponder churn (palette
+        // close, settings close, tab switch) settles before we take it back.
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  self.isKeyWindow,
+                  let paneId = self.sessionStore.activeSession?.focusedPaneId else { return }
+            TerminalManager.shared.focusTerminal(for: paneId)
+        }
     }
 
     @objc private func windowDidResignKey(_ notification: Notification) {
@@ -202,6 +213,31 @@ class TerminalPanel: NSPanel {
         if !wasKey && event.type == .leftMouseDown {
             super.sendEvent(event)
         }
+        // After any mouseUp, if SwiftUI grabbed firstResponder (or dropped it
+        // entirely) and the user isn't in a text field, restore focus to the
+        // active terminal. Without this, typing disappears after clicks on
+        // tabs / toolbar buttons until the user clicks inside the terminal.
+        if event.type == .leftMouseUp {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.isKeyWindow else { return }
+                if self.shouldRestoreTerminalFocus(),
+                   let paneId = self.sessionStore.activeSession?.focusedPaneId {
+                    TerminalManager.shared.focusTerminal(for: paneId)
+                }
+            }
+        }
+    }
+
+    private func shouldRestoreTerminalFocus() -> Bool {
+        // Don't steal focus while the command palette, search, or settings are open.
+        guard !sessionStore.showCommandPalette else { return false }
+        // If an NSText / NSTextView / SwiftUI TextField has focus, leave it alone.
+        let responder = firstResponder
+        if responder is NSText || responder is NSTextView { return false }
+        // Heuristic: SwiftUI's backing text responder classes typically conform to
+        // NSTextInputClient. Leave any text-input responder alone.
+        if let view = responder as? NSView, view is NSTextInputClient { return false }
+        return true
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {

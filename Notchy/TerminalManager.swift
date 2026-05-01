@@ -1176,10 +1176,18 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
     private static func validateOSC7Directory(_ raw: String) -> String? {
         let candidate: String
         if let url = URL(string: raw), url.scheme?.lowercased() == "file" {
-            // Reject remote hosts; only empty / "localhost" / current hostname allowed.
+            // Accept any host that names this Mac. The shell's `$(hostname)`
+            // is typically "Foo.local" while Host.current().localizedName is
+            // the friendly "Foo Bar's MacBook" — neither matches the other,
+            // so we accept any of the system's known names plus the loopback
+            // synonyms. Path existence + isDirectory below is the real
+            // safety check.
             let host = url.host?.lowercased() ?? ""
-            let localHost = Host.current().localizedName?.lowercased() ?? ""
-            if !host.isEmpty && host != "localhost" && host != "127.0.0.1" && host != localHost {
+            let acceptable = Self.localHostNames()
+            if !host.isEmpty,
+               host != "localhost",
+               host != "127.0.0.1",
+               !acceptable.contains(host) {
                 return nil
             }
             candidate = url.path
@@ -1192,6 +1200,30 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         guard FileManager.default.fileExists(atPath: candidate, isDirectory: &isDir),
               isDir.boolValue else { return nil }
         return candidate
+    }
+
+    /// All known names this machine answers to, lowercased. `Host.current()`
+    /// surfaces the friendly localized name, the .local Bonjour name, and
+    /// any custom hostnames — different shells/OSC emitters pick different
+    /// ones, so we compare against the full set.
+    private static func localHostNames() -> Set<String> {
+        var names: Set<String> = []
+        let host = Host.current()
+        for name in host.names {
+            names.insert(name.lowercased())
+            // Also accept the bare prefix without ".local" since some
+            // shells strip it.
+            if name.hasSuffix(".local") {
+                names.insert(String(name.dropLast(".local".count)).lowercased())
+            }
+        }
+        if let localized = host.localizedName?.lowercased() {
+            names.insert(localized)
+            // Friendly name often has spaces ("MacBook Air de Eduardo");
+            // shells emit the hyphenated form. Add both.
+            names.insert(localized.replacingOccurrences(of: " ", with: "-"))
+        }
+        return names
     }
 
     func processTerminated(source: TerminalView, exitCode: Int32?) {}

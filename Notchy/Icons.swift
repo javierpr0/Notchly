@@ -28,31 +28,73 @@ struct NotchyIcon: View {
     var weight: CGFloat = 1.5
 
     var body: some View {
-        ZStack {
-            switch kind {
-            case .pin:           PinShape(filled: false, lineWidth: weight)
-            case .pinFilled:     PinShape(filled: true, lineWidth: weight)
-            case .gear:          GearShape(lineWidth: weight)
-            case .plus:          PlusShape(lineWidth: weight)
-            case .close:         CloseShape(lineWidth: weight)
-            case .splitRight:    SplitArrowShape(direction: .right, lineWidth: weight)
-            case .splitDown:     SplitArrowShape(direction: .down, lineWidth: weight)
-            case .splitLeft:     SplitArrowShape(direction: .left, lineWidth: weight)
-            case .splitUp:       SplitArrowShape(direction: .up, lineWidth: weight)
-            case .working:       WorkingSpinnerShape(lineWidth: weight)
-            case .waiting:       WaitingShape(lineWidth: weight)
-            case .done:          DoneShape(lineWidth: weight)
-            case .bookmark:      BookmarkShape(lineWidth: weight)
-            case .restore:       RestoreShape(lineWidth: weight)
-            case .search:        SearchShape(lineWidth: weight)
-            case .chrome:        ChromeShape(lineWidth: weight)
-            case .shield:        ShieldShape(lineWidth: weight)
-            case .download:      DownloadShape(lineWidth: weight)
-            case .chevronUpDown: ChevronUpDownShape(lineWidth: weight)
-            case .sparkle:       SparkleShape(lineWidth: weight)
-            }
+        shape
+            .frame(width: size, height: size)
+    }
+
+    // Split into helpers so the Swift type-checker can resolve each branch
+    // independently. A single 20-case switch returning concrete View types
+    // exceeds the type-check time budget under -O.
+    @ViewBuilder
+    private var shape: some View {
+        switch kind {
+        case .pin, .pinFilled, .gear, .plus, .close:
+            primaryShape
+        case .splitRight, .splitDown, .splitLeft, .splitUp:
+            splitShape
+        case .working, .waiting, .done:
+            statusShape
+        case .bookmark, .restore, .search, .chrome, .shield, .download, .chevronUpDown, .sparkle:
+            miscShape
         }
-        .frame(width: size, height: size)
+    }
+
+    @ViewBuilder
+    private var primaryShape: some View {
+        switch kind {
+        case .pin:        PinShape(filled: false, lineWidth: weight)
+        case .pinFilled:  PinShape(filled: true, lineWidth: weight)
+        case .gear:       GearShape(lineWidth: weight)
+        case .plus:       PlusShape(lineWidth: weight)
+        case .close:      CloseShape(lineWidth: weight)
+        default:          EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var splitShape: some View {
+        switch kind {
+        case .splitRight: SplitArrowShape(direction: .right, lineWidth: weight)
+        case .splitDown:  SplitArrowShape(direction: .down, lineWidth: weight)
+        case .splitLeft:  SplitArrowShape(direction: .left, lineWidth: weight)
+        case .splitUp:    SplitArrowShape(direction: .up, lineWidth: weight)
+        default:          EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var statusShape: some View {
+        switch kind {
+        case .working: WorkingSpinnerShape(lineWidth: weight)
+        case .waiting: WaitingShape(lineWidth: weight)
+        case .done:    DoneShape(lineWidth: weight)
+        default:       EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var miscShape: some View {
+        switch kind {
+        case .bookmark:      BookmarkShape(lineWidth: weight)
+        case .restore:       RestoreShape(lineWidth: weight)
+        case .search:        SearchShape(lineWidth: weight)
+        case .chrome:        ChromeShape(lineWidth: weight)
+        case .shield:        ShieldShape(lineWidth: weight)
+        case .download:      DownloadShape(lineWidth: weight)
+        case .chevronUpDown: ChevronUpDownShape(lineWidth: weight)
+        case .sparkle:       SparkleShape(lineWidth: weight)
+        default:             EmptyView()
+        }
     }
 }
 

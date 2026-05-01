@@ -47,6 +47,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         setupHotkey()
         setupUpdater()
+        observeUpdaterWindows()
         FullDiskAccessChecker.promptIfNeeded()
 
         NotificationCenter.default.addObserver(
@@ -55,6 +56,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             name: .NotchyCheckForUpdates,
             object: nil
         )
+    }
+
+    /// Sparkle's update / progress / installed-version windows are plain
+    /// NSWindows at .normal level, so our floating TerminalPanel obscures
+    /// them. Watch every NSWindow that becomes key and, if it's owned by
+    /// Sparkle, raise it to a level above the panel and the notch pill.
+    private func observeUpdaterWindows() {
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let window = note.object as? NSWindow,
+                  Self.isSparkleWindow(window) else { return }
+            // .popUpMenu (101) is above .floating (3), .statusBar (25), and
+            // .modalPanel (8) — guarantees the update prompt is reachable
+            // even with the notch + panel both showing.
+            window.level = .popUpMenu
+            window.collectionBehavior.insert(.moveToActiveSpace)
+            self?.notchWindow?.endHover()
+        }
+    }
+
+    private static func isSparkleWindow(_ window: NSWindow) -> Bool {
+        let className = String(describing: type(of: window))
+        if className.hasPrefix("SU") || className.contains("Sparkle") { return true }
+        if let delegate = window.delegate {
+            let delegateClass = String(describing: type(of: delegate))
+            if delegateClass.hasPrefix("SU") || delegateClass.contains("Sparkle") { return true }
+        }
+        return false
     }
 
     @objc private func handleCheckForUpdates() {

@@ -378,7 +378,7 @@ struct PanelContentView: View {
                     TerminalManager.shared.setFontName(nil)
                     currentFontName = nil
                 } label: {
-                    Label(TerminalManager.systemFontLabel,
+                    Label(L10n.shared.fontAuto,
                           systemImage: currentFontName == nil ? "checkmark" : "")
                 }
                 Divider()
@@ -392,10 +392,20 @@ struct PanelContentView: View {
                 }
             } label: {
                 HStack(spacing: DS.Spacing.sm) {
-                    Text(currentFontName ?? TerminalManager.systemFontLabel)
-                        .font(DS.Font.title)
-                        .foregroundStyle(DS.Color.textPrimary)
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(currentFontName ?? L10n.shared.fontAuto)
+                            .font(DS.Font.title)
+                            .foregroundStyle(DS.Color.textPrimary)
+                            .lineLimit(1)
+                        if currentFontName == nil {
+                            // Show what "Auto" actually resolved to so the
+                            // user knows which font is rendering right now.
+                            Text(TerminalManager.shared.resolvedDefaultFontFamily)
+                                .font(DS.Font.caption)
+                                .foregroundStyle(DS.Color.textTertiary)
+                                .lineLimit(1)
+                        }
+                    }
                     Spacer()
                     NotchyIcon(kind: .chevronUpDown, size: 10)
                         .foregroundStyle(DS.Color.textTertiary)

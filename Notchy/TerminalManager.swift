@@ -1024,14 +1024,50 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         UserDefaults.standard.string(forKey: Self.fontNameKey)
     }
 
-    /// Resolve the user's chosen font, falling back to system monospaced if
-    /// the named font isn't installed (e.g. user uninstalled it later).
+    /// Resolve the user's chosen font. If the user hasn't picked one
+    /// explicitly, prefer Google Sans Mono / Google Sans Code (when
+    /// installed), then fall back to the system monospaced font.
     func currentFont(size: CGFloat) -> NSFont {
         if let name = fontName, !name.isEmpty,
-           let font = NSFont(name: name, size: size) {
+           let font = Self.resolveFont(name: name, size: size) {
             return font
         }
+        for candidate in Self.preferredDefaultFontFamilies {
+            if let font = Self.resolveFont(name: candidate, size: size) {
+                return font
+            }
+        }
         return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    /// Try a family name first (works for any installed weight) and fall
+    /// back to PostScript name lookup (NSFont(name:size:)).
+    private static func resolveFont(name: String, size: CGFloat) -> NSFont? {
+        let descriptor = NSFontDescriptor(fontAttributes: [.family: name])
+        if let font = NSFont(descriptor: descriptor, size: size) {
+            // NSFont(descriptor:) returns a fallback if the family isn't
+            // installed, so verify the family name actually matches.
+            if (font.familyName ?? "").caseInsensitiveCompare(name) == .orderedSame {
+                return font
+            }
+        }
+        return NSFont(name: name, size: size)
+    }
+
+    /// Default-font preference chain. First match wins. Add to this list to
+    /// expand auto-detection without changing the lookup logic.
+    private static let preferredDefaultFontFamilies: [String] = [
+        "Google Sans Mono",
+        "Google Sans Code",
+        "GoogleSansMono",
+        "GoogleSansCode"
+    ]
+
+    /// Returns the family name actually being used right now (after the
+    /// preference chain resolves), so the picker can show it.
+    var resolvedDefaultFontFamily: String {
+        let font = currentFont(size: fontSize)
+        return font.familyName ?? Self.systemFontLabel
     }
 
     /// All monospaced font families currently installed on the system,

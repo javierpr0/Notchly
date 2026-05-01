@@ -78,6 +78,7 @@ final class L10n {
 
     var theme: String { isSpanish ? "Tema" : "Theme" }
     var font: String { isSpanish ? "Fuente" : "Font" }
+    var fontAuto: String { isSpanish ? "Automática" : "Auto" }
     var fontSize: String { isSpanish ? "Tamaño de fuente" : "Font Size" }
     var reset: String { isSpanish ? "Restablecer" : "Reset" }
     var languageLabel: String { isSpanish ? "Idioma" : "Language" }

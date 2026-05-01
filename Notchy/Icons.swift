@@ -150,31 +150,33 @@ private struct GearShape: View {
     var body: some View {
         Canvas { ctx, size in
             let s = size.width
-            let center = CGPoint(x: s / 2, y: s / 2)
-            let outer = s * 0.44
-            let inner = s * 0.30
-            let teeth = 8
-
-            // Toothed silhouette built from alternating outer/inner radii
-            var gear = Path()
-            for i in 0..<(teeth * 2) {
-                let angle = Double(i) / Double(teeth * 2) * .pi * 2 - .pi / 2
-                let r = i % 2 == 0 ? outer : inner
-                let pt = CGPoint(x: center.x + cos(angle) * r, y: center.y + sin(angle) * r)
-                if i == 0 { gear.move(to: pt) } else { gear.addLine(to: pt) }
-            }
-            gear.closeSubpath()
-
-            ctx.stroke(gear, with: .color(.primary),
+            let path = Self.gearPath(in: s)
+            ctx.stroke(path, with: .color(.primary),
                        style: StrokeStyle(lineWidth: lineWidth, lineJoin: .round))
-
-            // Inner hole
             let hole = Path(ellipseIn: CGRect(
-                x: center.x - s * 0.12, y: center.y - s * 0.12,
-                width: s * 0.24, height: s * 0.24
+                x: s * 0.38, y: s * 0.38, width: s * 0.24, height: s * 0.24
             ))
             ctx.stroke(hole, with: .color(.primary), lineWidth: lineWidth)
         }
+    }
+
+    private static func gearPath(in s: CGFloat) -> Path {
+        let center = CGPoint(x: s / 2, y: s / 2)
+        let outer: CGFloat = s * 0.44
+        let inner: CGFloat = s * 0.30
+        let teeth = 8
+        var path = Path()
+        for i in 0..<(teeth * 2) {
+            let progress = Double(i) / Double(teeth * 2)
+            let angle = progress * .pi * 2 - .pi / 2
+            let r: CGFloat = (i % 2 == 0) ? outer : inner
+            let x = center.x + CGFloat(cos(angle)) * r
+            let y = center.y + CGFloat(sin(angle)) * r
+            let pt = CGPoint(x: x, y: y)
+            if i == 0 { path.move(to: pt) } else { path.addLine(to: pt) }
+        }
+        path.closeSubpath()
+        return path
     }
 }
 

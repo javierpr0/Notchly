@@ -1007,6 +1007,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
     static let shared = TerminalManager()
 
     private static let fontSizeKey = "terminalFontSize"
+    private static let fontNameKey = "terminalFontName"
     private static let themeKey = "terminalTheme"
     private static let defaultFontSize: CGFloat = 11
     private static let minFontSize: CGFloat = 9
@@ -1016,6 +1017,42 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         let saved = CGFloat(UserDefaults.standard.double(forKey: Self.fontSizeKey))
         return saved > 0 ? saved : Self.defaultFontSize
     }
+
+    /// Name of the saved monospaced font. Empty/nil means "use the system
+    /// monospaced font" (the original default).
+    var fontName: String? {
+        UserDefaults.standard.string(forKey: Self.fontNameKey)
+    }
+
+    /// Resolve the user's chosen font, falling back to system monospaced if
+    /// the named font isn't installed (e.g. user uninstalled it later).
+    func currentFont(size: CGFloat) -> NSFont {
+        if let name = fontName, !name.isEmpty,
+           let font = NSFont(name: name, size: size) {
+            return font
+        }
+        return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    /// All monospaced font families currently installed on the system,
+    /// alphabetically sorted. Used to populate the font picker.
+    static func availableMonospacedFontFamilies() -> [String] {
+        let manager = NSFontManager.shared
+        let traits: NSFontTraitMask = .fixedPitchFontMask
+        let families = manager.availableFontFamilies.filter { family in
+            guard let members = manager.availableMembers(ofFontFamily: family) else { return false }
+            return members.contains { member in
+                if let mask = (member[3] as? NSNumber)?.uintValue {
+                    return (mask & UInt(traits.rawValue)) != 0
+                }
+                return false
+            }
+        }
+        return families.sorted(by: { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending })
+    }
+
+    /// Built-in label for the system default font row.
+    static let systemFontLabel = "System Mono"
 
     private(set) var terminals: [UUID: LocalProcessTerminalView] = [:]
 
@@ -1031,7 +1068,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         terminal.optionAsMetaKey = false
         terminal.terminal.changeScrollback(10_000)
 
-        terminal.font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        terminal.font = currentFont(size: fontSize)
         applyTheme(to: terminal)
 
         let config: ProjectConfig?
@@ -1140,7 +1177,21 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
     private func setFontSize(_ size: CGFloat) {
         let clamped = max(Self.minFontSize, min(Self.maxFontSize, size))
         UserDefaults.standard.set(Double(clamped), forKey: Self.fontSizeKey)
-        let font = NSFont.monospacedSystemFont(ofSize: clamped, weight: .regular)
+        let font = currentFont(size: clamped)
+        for terminal in terminals.values {
+            terminal.font = font
+        }
+    }
+
+    /// Persist a new font family name and apply it to every open terminal.
+    /// Pass nil (or empty string) to revert to the system monospaced font.
+    func setFontName(_ name: String?) {
+        if let name, !name.isEmpty {
+            UserDefaults.standard.set(name, forKey: Self.fontNameKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.fontNameKey)
+        }
+        let font = currentFont(size: fontSize)
         for terminal in terminals.values {
             terminal.font = font
         }

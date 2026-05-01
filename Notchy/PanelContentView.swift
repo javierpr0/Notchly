@@ -41,6 +41,8 @@ struct PanelContentView: View {
     @State private var selectedThemeId = TerminalManager.shared.currentThemeId
     @State private var showSettings = false
     @State private var currentFontSize = TerminalManager.shared.fontSize
+    @State private var currentFontName: String? = TerminalManager.shared.fontName
+    @State private var availableMonoFonts: [String] = []
 
     private var theme: TerminalTheme { sessionStore.currentTheme }
 
@@ -364,6 +366,54 @@ struct PanelContentView: View {
 
             Divider().padding(.vertical, 6)
 
+            // Font family picker
+            Text(L10n.shared.font)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
+
+            Menu {
+                Button {
+                    TerminalManager.shared.setFontName(nil)
+                    currentFontName = nil
+                } label: {
+                    Label(TerminalManager.systemFontLabel,
+                          systemImage: currentFontName == nil ? "checkmark" : "")
+                }
+                Divider()
+                ForEach(availableMonoFonts, id: \.self) { name in
+                    Button {
+                        TerminalManager.shared.setFontName(name)
+                        currentFontName = name
+                    } label: {
+                        Label(name, systemImage: currentFontName == name ? "checkmark" : "")
+                    }
+                }
+            } label: {
+                HStack(spacing: DS.Spacing.sm) {
+                    Text(currentFontName ?? TerminalManager.systemFontLabel)
+                        .font(DS.Font.title)
+                        .foregroundStyle(DS.Color.textPrimary)
+                        .lineLimit(1)
+                    Spacer()
+                    NotchyIcon(kind: .chevronUpDown, size: 10)
+                        .foregroundStyle(DS.Color.textTertiary)
+                }
+                .padding(.horizontal, DS.Spacing.sm)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
+                        .fill(DS.Color.hoverTint)
+                )
+                .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .padding(.horizontal, DS.Spacing.md)
+
+            Divider().padding(.vertical, 6)
+
             Text(L10n.shared.fontSize)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(.secondary)
@@ -489,7 +539,12 @@ struct PanelContentView: View {
             .padding(.vertical, 4)
         }
         .padding(.vertical, 8)
-        .frame(width: 220)
+        .frame(width: 240)
+        .onAppear {
+            // Refresh in case the user installed/uninstalled a mono font
+            // since the last time the popover was shown.
+            availableMonoFonts = TerminalManager.availableMonospacedFontFamilies()
+        }
     }
 
     private func claudeMenuItem(title: String, subtitle: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {

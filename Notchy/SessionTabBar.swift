@@ -242,13 +242,14 @@ struct SessionTab: View {
                     : (isHovering ? DS.Color.hoverTint : Color.clear)
                 )
         )
-        // Active accent underline (no border box) — gives clear hierarchy.
+        // Active underline (no border box) — clear hierarchy without
+        // pulling the eye like a saturated color would.
         .overlay(alignment: .bottom) {
             if isActive {
                 RoundedRectangle(cornerRadius: 1, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [DS.Color.accent.opacity(0.85), DS.Color.accent],
+                            colors: [Color.white.opacity(0.55), Color.white.opacity(0.85)],
                             startPoint: .leading, endPoint: .trailing
                         )
                     )

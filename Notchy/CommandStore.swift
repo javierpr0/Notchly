@@ -17,7 +17,6 @@ class CommandStore {
 
     private static let maxCommandsPerDirectory = 500
     private static let maxCachedDirectories = 32
-    private static let writeDebounceSeconds: TimeInterval = 2.0
 
     private let baseDir: URL = {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -28,8 +27,8 @@ class CommandStore {
     private var cache: [String: [StoredCommand]] = [:]
     private var cacheAccessOrder: [String] = [] // LRU: most-recently used at end
     private var historyImported = false
-    private var dirtyDirectories: Set<String> = []
-    private var flushWorkItem: DispatchWorkItem?
+    private var terminateObserver: NSObjectProtocol?
+    private var resignActiveObserver: NSObjectProtocol?
 
     private init() {
         try? FileManager.default.createDirectory(
@@ -40,32 +39,32 @@ class CommandStore {
         // Force-tighten perms in case directory already existed.
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: baseDir.path)
 
-        // Flush pending writes on app lifecycle events so a debounced batch
-        // doesn't get lost on quit / sleep.
+        // Belt-and-braces: even though every recordCommand persists
+        // synchronously on its serial queue (so commands survive a normal
+        // quit), make sure any in-flight async writes complete on app exit.
+        // Block-based observers don't require NSObject inheritance — the
+        // selector-based form silently failed at runtime when this class
+        // was a plain Swift class.
         let nc = NotificationCenter.default
-        nc.addObserver(self, selector: #selector(handleFlushNotification),
-                       name: NSApplication.willTerminateNotification, object: nil)
-        nc.addObserver(self, selector: #selector(handleFlushNotification),
-                       name: NSApplication.willResignActiveNotification, object: nil)
+        terminateObserver = nc.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil, queue: nil
+        ) { [weak self] _ in self?.flushSync() }
+        resignActiveObserver = nc.addObserver(
+            forName: NSApplication.willResignActiveNotification,
+            object: nil, queue: nil
+        ) { [weak self] _ in self?.flushSync() }
     }
 
-    @objc private func handleFlushNotification() {
-        flushNow()
+    deinit {
+        if let token = terminateObserver { NotificationCenter.default.removeObserver(token) }
+        if let token = resignActiveObserver { NotificationCenter.default.removeObserver(token) }
     }
 
-    /// Synchronously writes any pending dirty directories to disk.
-    func flushNow() {
-        queue.sync {
-            flushWorkItem?.cancel()
-            flushWorkItem = nil
-            let dirty = dirtyDirectories
-            dirtyDirectories.removeAll()
-            for directory in dirty {
-                if let cmds = cache[directory] {
-                    saveCommands(cmds, for: directory)
-                }
-            }
-        }
+    /// Drain any in-flight async work so all queued writes finish before we
+    /// return. Safe to call from any thread.
+    func flushSync() {
+        queue.sync { /* serial fence */ }
     }
 
     // MARK: - Public API
@@ -94,7 +93,12 @@ class CommandStore {
                 cmds = Array(cmds.prefix(Self.maxCommandsPerDirectory))
             }
             self.updateCache(directory: directory, commands: cmds)
-            self.markDirty(directory)
+            // Persist immediately on the serial queue. The previous version
+            // debounced writes by 2s and relied on app-lifecycle notifications
+            // to flush — those notifications never fired because the
+            // selector-based observer required NSObject inheritance, so a
+            // burst of commands followed by a quit lost all of them.
+            self.saveCommands(cmds, for: directory)
         }
     }
 
@@ -104,10 +108,7 @@ class CommandStore {
             var cmds = self._commands(for: directory)
             cmds.removeAll { $0.text == command }
             self.updateCache(directory: directory, commands: cmds)
-            // Deletes are user-visible enough that we persist immediately
-            // (they are also rare; debouncing offers little value).
             self.saveCommands(cmds, for: directory)
-            self.dirtyDirectories.remove(directory)
         }
     }
 
@@ -166,11 +167,8 @@ class CommandStore {
         touchCache(directory)
         if cacheAccessOrder.count > Self.maxCachedDirectories,
            let evicting = cacheAccessOrder.first {
-            // Evict only if the directory has no pending dirty write.
-            if !dirtyDirectories.contains(evicting) {
-                cacheAccessOrder.removeFirst()
-                cache.removeValue(forKey: evicting)
-            }
+            cacheAccessOrder.removeFirst()
+            cache.removeValue(forKey: evicting)
         }
     }
 
@@ -179,24 +177,6 @@ class CommandStore {
             cacheAccessOrder.remove(at: idx)
         }
         cacheAccessOrder.append(directory)
-    }
-
-    private func markDirty(_ directory: String) {
-        dirtyDirectories.insert(directory)
-        flushWorkItem?.cancel()
-        let item = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            let dirty = self.dirtyDirectories
-            self.dirtyDirectories.removeAll()
-            for dir in dirty {
-                if let cmds = self.cache[dir] {
-                    self.saveCommands(cmds, for: dir)
-                }
-            }
-            self.flushWorkItem = nil
-        }
-        flushWorkItem = item
-        queue.asyncAfter(deadline: .now() + Self.writeDebounceSeconds, execute: item)
     }
 
     // MARK: - Private

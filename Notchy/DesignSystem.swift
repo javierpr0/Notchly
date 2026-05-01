@@ -131,31 +131,22 @@ extension View {
 private struct ChromeButtonModifier: ViewModifier {
     var isActive: Bool
     @State private var isHovering = false
-    @State private var isPressed = false
 
     func body(content: Content) -> some View {
+        // Important: do NOT attach a DragGesture (even simultaneous) here.
+        // SwiftUI on macOS will swallow the click on a parent Button when
+        // the Button's label has a DragGesture(minimumDistance: 0), which is
+        // exactly what a "press scale" effect requires. We give up the press
+        // animation so taps stay reliable.
         content
             .frame(width: 28, height: 28)
             .background(
                 RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
                     .fill(isActive ? DS.Color.activeTint : (isHovering ? DS.Color.hoverTint : .clear))
             )
-            .scaleEffect(isPressed ? 0.94 : 1.0)
-            .contentShape(Rectangle())
             .onHover { hovering in
                 withAnimation(DS.Motion.swift) { isHovering = hovering }
             }
-            .pressAction(onPress: { isPressed = true }, onRelease: { isPressed = false })
-    }
-}
-
-extension View {
-    fileprivate func pressAction(onPress: @escaping () -> Void, onRelease: @escaping () -> Void) -> some View {
-        simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in onPress() }
-                .onEnded { _ in onRelease() }
-        )
     }
 }
 

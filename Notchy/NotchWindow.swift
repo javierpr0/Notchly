@@ -6,9 +6,10 @@ import SwiftUI
 /// Expands downward with a bounce animation when any session is working.
 class NotchWindow: NSPanel {
     private var mouseMonitor: Any?
-    private var localMouseMonitor: Any?
     private var screenObserver: Any?
     private var statusObserver: Any?
+    private var hoverPollTimer: Timer?
+    private var currentDisplayLink: CVDisplayLinkWrapper?
     var onHover: (() -> Void)?
     /// Additional rects (in screen coordinates) that should also trigger hover.
     /// Each closure is called at check-time so the rect stays up-to-date.
@@ -109,9 +110,7 @@ class NotchWindow: NSPanel {
         if let monitor = mouseMonitor {
             NSEvent.removeMonitor(monitor)
         }
-        if let monitor = localMouseMonitor {
-            NSEvent.removeMonitor(monitor)
-        }
+        hoverPollTimer?.invalidate()
         if let observer = screenObserver {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -193,6 +192,9 @@ class NotchWindow: NSPanel {
         let startTime = CACurrentMediaTime()
         let duration: Double = 0.6
 
+        // Cancel any previous animation so two wrappers don't fight over the
+        // window frame each refresh cycle.
+        currentDisplayLink?.stop()
         let displayLink = CVDisplayLinkWrapper { [weak self] in
             guard let self else { return false }
             let elapsed = CACurrentMediaTime() - startTime
@@ -212,6 +214,7 @@ class NotchWindow: NSPanel {
             }
             return t < 1.0
         }
+        currentDisplayLink = displayLink
         displayLink.start()
     }
 
@@ -241,6 +244,7 @@ class NotchWindow: NSPanel {
         let startTime = CACurrentMediaTime()
         let duration: Double = 0.3
 
+        currentDisplayLink?.stop()
         let displayLink = CVDisplayLinkWrapper { [weak self] in
             guard let self else { return false }
             let elapsed = CACurrentMediaTime() - startTime
@@ -264,6 +268,7 @@ class NotchWindow: NSPanel {
             }
             return t < 1.0
         }
+        currentDisplayLink = displayLink
         displayLink.start()
     }
 
@@ -306,15 +311,65 @@ class NotchWindow: NSPanel {
     // MARK: - Mouse tracking
 
     private func setupTracking() {
-        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] _ in
-            self?.checkMouse()
+        // Global mouse-moved monitors fire once per pixel of cursor travel —
+        // running them all day, system-wide, just to spot when the cursor
+        // approaches the notch is wasteful. Instead, we watch for cursor
+        // proximity via a low-frequency timer (10Hz when cursor is near the
+        // top of the screen, paused otherwise) plus a tracking area covering
+        // the pill itself for fine-grained inside/outside detection.
+        rebuildTrackingArea()
+        startProximityPolling()
+    }
+
+    private var notchTrackingArea: NSTrackingArea?
+
+    private func rebuildTrackingArea() {
+        guard let cv = contentView else { return }
+        if let existing = notchTrackingArea {
+            cv.removeTrackingArea(existing)
         }
-        // Local monitor catches events when the mouse is over this window itself
-        // (global monitors only fire for events outside the app's windows)
-        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] event in
-            self?.checkMouse()
-            return event
+        let area = NSTrackingArea(
+            rect: cv.bounds,
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        cv.addTrackingArea(area)
+        notchTrackingArea = area
+    }
+
+    /// Cheap proximity poll. We only need to react when the cursor is within
+    /// ~120pt of the menu bar; anywhere else, hover state cannot change.
+    private func startProximityPolling() {
+        hoverPollTimer?.invalidate()
+        hoverPollTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            self?.proximityTick()
         }
+        if let timer = hoverPollTimer {
+            RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+
+    private func proximityTick() {
+        guard let screen = NSScreen.builtIn else { return }
+        let mouse = NSEvent.mouseLocation
+        // Only run the full hit-test when the cursor is near the top of the
+        // built-in screen; otherwise nothing relevant could be happening.
+        let topThreshold = screen.frame.maxY - notchHeight - 120
+        if mouse.y < topThreshold && !isHovered { return }
+        checkMouse()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        checkMouse()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        checkMouse()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        checkMouse()
     }
 
     private func checkMouse() {

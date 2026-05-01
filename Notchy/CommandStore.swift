@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import CryptoKit
 
@@ -14,6 +15,10 @@ struct CommandFile: Codable {
 class CommandStore {
     static let shared = CommandStore()
 
+    private static let maxCommandsPerDirectory = 500
+    private static let maxCachedDirectories = 32
+    private static let writeDebounceSeconds: TimeInterval = 2.0
+
     private let baseDir: URL = {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return home.appendingPathComponent(".notchly/commands")
@@ -21,10 +26,46 @@ class CommandStore {
 
     private let queue = DispatchQueue(label: "com.notchly.CommandStore")
     private var cache: [String: [StoredCommand]] = [:]
+    private var cacheAccessOrder: [String] = [] // LRU: most-recently used at end
     private var historyImported = false
+    private var dirtyDirectories: Set<String> = []
+    private var flushWorkItem: DispatchWorkItem?
 
     private init() {
-        try? FileManager.default.createDirectory(at: baseDir, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(
+            at: baseDir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        // Force-tighten perms in case directory already existed.
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: baseDir.path)
+
+        // Flush pending writes on app lifecycle events so a debounced batch
+        // doesn't get lost on quit / sleep.
+        let nc = NotificationCenter.default
+        nc.addObserver(self, selector: #selector(handleFlushNotification),
+                       name: NSApplication.willTerminateNotification, object: nil)
+        nc.addObserver(self, selector: #selector(handleFlushNotification),
+                       name: NSApplication.willResignActiveNotification, object: nil)
+    }
+
+    @objc private func handleFlushNotification() {
+        flushNow()
+    }
+
+    /// Synchronously writes any pending dirty directories to disk.
+    func flushNow() {
+        queue.sync {
+            flushWorkItem?.cancel()
+            flushWorkItem = nil
+            let dirty = dirtyDirectories
+            dirtyDirectories.removeAll()
+            for directory in dirty {
+                if let cmds = cache[directory] {
+                    saveCommands(cmds, for: directory)
+                }
+            }
+        }
     }
 
     // MARK: - Public API
@@ -43,8 +84,17 @@ class CommandStore {
             } else {
                 cmds.append(StoredCommand(text: command, count: 1, lastUsed: Date()))
             }
-            self.cache[directory] = cmds
-            self.saveCommands(cmds, for: directory)
+            // Cap at maxCommandsPerDirectory by trimming the oldest least-used
+            // entries first (lowest count, then oldest lastUsed).
+            if cmds.count > Self.maxCommandsPerDirectory {
+                cmds.sort { lhs, rhs in
+                    if lhs.count != rhs.count { return lhs.count > rhs.count }
+                    return lhs.lastUsed > rhs.lastUsed
+                }
+                cmds = Array(cmds.prefix(Self.maxCommandsPerDirectory))
+            }
+            self.updateCache(directory: directory, commands: cmds)
+            self.markDirty(directory)
         }
     }
 
@@ -53,8 +103,11 @@ class CommandStore {
             guard let self else { return }
             var cmds = self._commands(for: directory)
             cmds.removeAll { $0.text == command }
-            self.cache[directory] = cmds
+            self.updateCache(directory: directory, commands: cmds)
+            // Deletes are user-visible enough that we persist immediately
+            // (they are also rare; debouncing offers little value).
             self.saveCommands(cmds, for: directory)
+            self.dirtyDirectories.remove(directory)
         }
     }
 
@@ -89,7 +142,7 @@ class CommandStore {
                         seen.insert(cmd)
                     }
 
-                    self.cache[directory] = cmds
+                    self.updateCache(directory: directory, commands: cmds)
                     self.saveCommands(cmds, for: directory)
                 }
             }
@@ -99,10 +152,51 @@ class CommandStore {
     // MARK: - Private (call only from within queue)
 
     private func _commands(for directory: String) -> [StoredCommand] {
-        if let cached = cache[directory] { return cached }
+        if let cached = cache[directory] {
+            touchCache(directory)
+            return cached
+        }
         let loaded = loadCommands(for: directory)
-        cache[directory] = loaded
+        updateCache(directory: directory, commands: loaded)
         return loaded
+    }
+
+    private func updateCache(directory: String, commands: [StoredCommand]) {
+        cache[directory] = commands
+        touchCache(directory)
+        if cacheAccessOrder.count > Self.maxCachedDirectories,
+           let evicting = cacheAccessOrder.first {
+            // Evict only if the directory has no pending dirty write.
+            if !dirtyDirectories.contains(evicting) {
+                cacheAccessOrder.removeFirst()
+                cache.removeValue(forKey: evicting)
+            }
+        }
+    }
+
+    private func touchCache(_ directory: String) {
+        if let idx = cacheAccessOrder.firstIndex(of: directory) {
+            cacheAccessOrder.remove(at: idx)
+        }
+        cacheAccessOrder.append(directory)
+    }
+
+    private func markDirty(_ directory: String) {
+        dirtyDirectories.insert(directory)
+        flushWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let dirty = self.dirtyDirectories
+            self.dirtyDirectories.removeAll()
+            for dir in dirty {
+                if let cmds = self.cache[dir] {
+                    self.saveCommands(cmds, for: dir)
+                }
+            }
+            self.flushWorkItem = nil
+        }
+        flushWorkItem = item
+        queue.asyncAfter(deadline: .now() + Self.writeDebounceSeconds, execute: item)
     }
 
     // MARK: - Private
@@ -128,7 +222,12 @@ class CommandStore {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(file) else { return }
-        try? data.write(to: path, options: .atomic)
+        do {
+            try data.write(to: path, options: .atomic)
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
+        } catch {
+            // Disk full / perm denied — ignore so we don't crash a UI flow.
+        }
     }
 
     // MARK: - Default Commands

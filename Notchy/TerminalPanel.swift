@@ -126,6 +126,7 @@ class TerminalPanel: NSPanel {
         }
         makeKeyAndOrderFront(nil)
         NotificationCenter.default.post(name: .NotchyNotchStatusChanged, object: nil)
+        ensureTerminalFocus()
     }
 
     func showPanelCentered(on screen: NSScreen) {
@@ -137,6 +138,19 @@ class TerminalPanel: NSPanel {
         setFrameOrigin(NSPoint(x: x, y: y))
         makeKeyAndOrderFront(nil)
         NotificationCenter.default.post(name: .NotchyNotchStatusChanged, object: nil)
+        ensureTerminalFocus()
+    }
+
+    // Fallback for show paths where windowDidBecomeKey races (notch hover open
+    // on a non-activating panel often sees isKeyWindow == false on the first
+    // dispatched tick). Runs unconditionally one runloop later; focusTerminal
+    // is a cheap no-op when the right responder is already set.
+    private func ensureTerminalFocus() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  let paneId = self.sessionStore.activeSession?.focusedPaneId else { return }
+            TerminalManager.shared.focusTerminal(for: paneId)
+        }
     }
 
     func hidePanel() {
@@ -231,12 +245,18 @@ class TerminalPanel: NSPanel {
     private func shouldRestoreTerminalFocus() -> Bool {
         // Don't steal focus while the command palette, search, or settings are open.
         guard !sessionStore.showCommandPalette else { return false }
-        // If an NSText / NSTextView / SwiftUI TextField has focus, leave it alone.
+        // If a real text input has focus (NSTextField/NSText/NSTextView/SwiftUI
+        // TextField), leave it alone. We can't broadly bail on NSTextInputClient
+        // because SwiftTerm itself conforms to NSTextInputClient — using that
+        // heuristic blocked the restore-on-pane-switch path.
         let responder = firstResponder
-        if responder is NSText || responder is NSTextView { return false }
-        // Heuristic: SwiftUI's backing text responder classes typically conform to
-        // NSTextInputClient. Leave any text-input responder alone.
-        if let view = responder as? NSView, view is NSTextInputClient { return false }
+        if responder is NSText || responder is NSTextView || responder is NSTextField { return false }
+        if let view = responder as? NSView,
+           view is ClickThroughTerminalView == false,
+           let inputClient = view as? NSTextInputClient,
+           inputClient.hasMarkedText() == true {
+            return false
+        }
         return true
     }
 

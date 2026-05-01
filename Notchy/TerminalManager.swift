@@ -99,6 +99,17 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         }
     }
 
+    // Without this, makeFirstResponder calls scheduled while terminal.window
+    // was still nil silently no-op, leaving the PTY receiving input via the
+    // responder chain but the view not redrawing the cursor until a click.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window, window.isKeyWindow else { return }
+        if window.firstResponder !== self {
+            window.makeFirstResponder(self)
+        }
+    }
+
     private func installClickMonitor() {
         clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let self, let id = self.sessionId,
@@ -106,6 +117,9 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
                   eventWindow === self.window else { return event }
             let locationInView = self.convert(event.locationInWindow, from: nil)
             if self.bounds.contains(locationInView) {
+                if self.window?.firstResponder !== self {
+                    self.window?.makeFirstResponder(self)
+                }
                 Task { @MainActor in
                     SessionStore.shared.focusPane(id)
                 }
@@ -234,8 +248,10 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         let terminal = getTerminal()
         guard terminal.rows >= 20 else { return nil }
         var lineTexts: [String] = []
+        lineTexts.reserveCapacity(terminal.rows)
         for row in 0..<terminal.rows {
             var line = ""
+            line.reserveCapacity(terminal.cols)
             for col in 0..<terminal.cols {
                 let ch = terminal.getCharacter(col: col, row: row) ?? " "
                 line.append(ch == "\u{0}" ? " " : ch)
@@ -270,6 +286,31 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     func extractFullVisibleText() -> String? {
         guard let lineTexts = extractAllLines() else { return nil }
         return relevantText(from: lineTexts)
+    }
+
+    /// Single-pass extraction used by evaluateStatus to avoid scanning the
+    /// terminal buffer twice (visible + full + per-status checks).
+    private struct StatusSnapshot {
+        let visibleText: String
+        let fullText: String
+        let recentLines: ArraySlice<String>
+    }
+
+    private func extractStatusSnapshot() -> StatusSnapshot? {
+        guard let allLines = extractAllLines() else { return nil }
+        let separator = "────────"
+        let aboveSeparator: [String]
+        if let idx = allLines.lastIndex(where: { $0.contains(separator) }) {
+            aboveSeparator = Array(allLines.prefix(idx))
+        } else {
+            aboveSeparator = allLines
+        }
+        let visible = relevantText(from: aboveSeparator)
+        let full = relevantText(from: allLines)
+        // detectError only ever needs to look at the last 25 rows — older
+        // output was already classified on previous ticks.
+        let recent = allLines.suffix(25)
+        return StatusSnapshot(visibleText: visible, fullText: full, recentLines: recent)
     }
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
@@ -314,8 +355,9 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     private static let successSymbols: Set<Character> = ["\u{2713}", "\u{2714}"]
 
     private func evaluateStatus(for id: UUID) {
-        guard let visibleText = extractVisibleText() else { return }
-        let fullText = extractFullVisibleText() ?? visibleText
+        guard let snap = extractStatusSnapshot() else { return }
+        let visibleText = snap.visibleText
+        let fullText = snap.fullText
 
         let newStatus: TerminalStatus
 
@@ -331,7 +373,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         }
 
         let summary: String? = (newStatus == .idle) ? Self.extractSummary(from: visibleText) : nil
-        let hadError: Bool = (newStatus == .idle) ? Self.detectError(in: visibleText) : false
+        let hadError: Bool = (newStatus == .idle) ? Self.detectError(in: snap.recentLines) : false
 
         Task { @MainActor in
             if let summary {
@@ -347,13 +389,47 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && !$0.hasPrefix(separator) }
         guard let last = lines.last else { return nil }
-        return String(last.prefix(100))
+        // Notifications display whatever appeared on the last visible line,
+        // which is attacker-controllable (any program in the terminal can emit
+        // bidi overrides / control chars / arbitrary unicode). Strip control
+        // and bidi characters before letting the text leave the app.
+        return Self.sanitizeForDisplay(String(last.prefix(100)))
     }
 
-    private static func detectError(in text: String) -> Bool {
-        let lines = text.components(separatedBy: "\n")
+    /// Removes ANSI escape sequences, control characters, and bidi-override
+    /// codepoints so terminal output cannot spoof or break notification text.
+    static func sanitizeForDisplay(_ input: String) -> String {
+        var stripped = input
+        // Strip CSI escape sequences (ESC [ ... letter)
+        if let regex = try? NSRegularExpression(pattern: "\u{001B}\\[[0-?]*[ -/]*[@-~]") {
+            let range = NSRange(stripped.startIndex..., in: stripped)
+            stripped = regex.stringByReplacingMatches(in: stripped, range: range, withTemplate: "")
+        }
+        // Strip OSC sequences (ESC ] ... BEL/ST)
+        if let regex = try? NSRegularExpression(pattern: "\u{001B}\\][^\u{0007}\u{001B}]*[\u{0007}\u{001B}]") {
+            let range = NSRange(stripped.startIndex..., in: stripped)
+            stripped = regex.stringByReplacingMatches(in: stripped, range: range, withTemplate: "")
+        }
+        // Drop control + bidi override + zero-width characters.
+        let blocked: Set<Unicode.Scalar> = [
+            "\u{200E}", "\u{200F}", "\u{202A}", "\u{202B}", "\u{202C}",
+            "\u{202D}", "\u{202E}", "\u{2066}", "\u{2067}", "\u{2068}", "\u{2069}",
+            "\u{200B}", "\u{200C}", "\u{200D}", "\u{FEFF}"
+        ]
+        let scalars = stripped.unicodeScalars.filter { scalar in
+            if blocked.contains(scalar) { return false }
+            // Allow tab and printable; drop other control codes
+            if scalar.value < 0x20 && scalar != "\t" { return false }
+            if scalar.value == 0x7F { return false }
+            return true
+        }
+        return String(String.UnicodeScalarView(scalars))
+    }
+
+    private static func detectError<S: Sequence>(in lines: S) -> Bool where S.Element == String {
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
             let lower = trimmed.lowercased()
             for pattern in errorPatterns {
                 if lower.contains(pattern) { return true }
@@ -958,7 +1034,12 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         terminal.font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
         applyTheme(to: terminal)
 
-        let config = ProjectConfig.load(from: workingDirectory)
+        let config: ProjectConfig?
+        if Thread.isMainThread {
+            config = MainActor.assumeIsolated { ProjectTrustStore.loadTrustedConfig(from: workingDirectory) }
+        } else {
+            config = nil
+        }
         let shell = config?.shell ?? ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let environment = buildEnvironment(extra: config?.env)
 
@@ -1007,17 +1088,37 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         guard let dir = directory,
               let terminal = source as? ClickThroughTerminalView,
               let sessionId = terminal.sessionId else { return }
-        // OSC 7 sends directory as file://hostname/path — extract just the path
-        let path: String
-        if let url = URL(string: dir), url.scheme == "file" {
-            path = url.path
-        } else {
-            path = dir
-        }
+        // OSC 7 is emitted by any program in the terminal. A hostile script
+        // could pivot the working directory (and hence command-store scope,
+        // autocomplete, file lookups) to an arbitrary path. Validate that the
+        // host portion is empty/local, the URL scheme is file://, and the
+        // resolved path is an actual directory before applying it.
+        guard let path = Self.validateOSC7Directory(dir) else { return }
         terminal.setWorkingDirectory(path)
         Task { @MainActor in
             SessionStore.shared.updateWorkingDirectory(sessionId, directory: path)
         }
+    }
+
+    private static func validateOSC7Directory(_ raw: String) -> String? {
+        let candidate: String
+        if let url = URL(string: raw), url.scheme?.lowercased() == "file" {
+            // Reject remote hosts; only empty / "localhost" / current hostname allowed.
+            let host = url.host?.lowercased() ?? ""
+            let localHost = Host.current().localizedName?.lowercased() ?? ""
+            if !host.isEmpty && host != "localhost" && host != "127.0.0.1" && host != localHost {
+                return nil
+            }
+            candidate = url.path
+        } else if raw.hasPrefix("/") {
+            candidate = raw
+        } else {
+            return nil
+        }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: candidate, isDirectory: &isDir),
+              isDir.boolValue else { return nil }
+        return candidate
     }
 
     func processTerminated(source: TerminalView, exitCode: Int32?) {}
@@ -1057,6 +1158,9 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
 
     func destroyTerminal(for sessionId: UUID) {
         terminals.removeValue(forKey: sessionId)
+        Task { @MainActor in
+            SessionStore.shared.paneCompletionInfo.removeValue(forKey: sessionId)
+        }
     }
 
     private func buildEnvironment(extra: [String: String]? = nil) -> [String] {

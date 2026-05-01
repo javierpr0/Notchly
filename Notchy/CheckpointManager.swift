@@ -38,6 +38,28 @@ class CheckpointManager {
         return f
     }()
 
+    // git ref-name accepts a narrow alphabet; everything outside [A-Za-z0-9._-]
+    // is replaced so an attacker-controlled session name cannot break the ref
+    // hierarchy or the for-each-ref glob filter when listing snapshots.
+    private static func sanitizeProjectName(_ name: String) -> String {
+        var sanitized = String(name.unicodeScalars.map { scalar -> Character in
+            let value = scalar.value
+            let isAlnum = (value >= 0x30 && value <= 0x39)
+                       || (value >= 0x41 && value <= 0x5A)
+                       || (value >= 0x61 && value <= 0x7A)
+            if isAlnum || scalar == "." || scalar == "_" || scalar == "-" {
+                return Character(scalar)
+            }
+            return "_"
+        })
+        // git refs cannot start with '.' or '-' and cannot contain '..'
+        while sanitized.hasPrefix(".") || sanitized.hasPrefix("-") {
+            sanitized.removeFirst()
+        }
+        sanitized = sanitized.replacingOccurrences(of: "..", with: "__")
+        return sanitized.isEmpty ? "project" : sanitized
+    }
+
     private lazy var gitPath: String = {
         let candidates = ["/usr/bin/git", "/usr/local/bin/git", "/opt/homebrew/bin/git"]
         for path in candidates {
@@ -84,7 +106,8 @@ class CheckpointManager {
         _ = try git(["rev-parse", "--git-dir"], in: projectDirectory)
 
         let timestamp = dateFormatter.string(from: Date())
-        let refName = "\(refPrefix)/\(projectName)/\(timestamp)"
+        let safeName = Self.sanitizeProjectName(projectName)
+        let refName = "\(refPrefix)/\(safeName)/\(timestamp)"
 
         // Use a temporary index file to avoid disturbing the user's staged changes
         let tempIndex = NSTemporaryDirectory() + "Notchy-index-\(UUID().uuidString)"
@@ -120,7 +143,8 @@ class CheckpointManager {
 
     /// Lists all checkpoints for a project, newest first
     func checkpoints(for projectName: String, in projectDirectory: String) -> [Checkpoint] {
-        let refPattern = "\(refPrefix)/\(projectName)/"
+        let safeName = Self.sanitizeProjectName(projectName)
+        let refPattern = "\(refPrefix)/\(safeName)/"
         guard let output = try? git(
             ["for-each-ref", "--format=%(refname) %(objectname:short)", refPattern],
             in: projectDirectory
@@ -142,8 +166,19 @@ class CheckpointManager {
         .sorted { $0.date > $1.date }
     }
 
-    /// Restores a checkpoint by checking out all files from its tree into the working directory
+    /// Restores a checkpoint by checking out all files from its tree into the working directory.
+    /// Before doing so, a "before-restore" snapshot is captured automatically so the
+    /// user can recover any uncommitted work that the checkout would otherwise overwrite.
     func restoreCheckpoint(_ checkpoint: Checkpoint, to projectDirectory: String) throws {
+        // Best-effort safety snapshot. Failures here are logged but do not
+        // block the restore — checkpoints are still recoverable from the
+        // snapshot ref hierarchy if anything goes wrong.
+        let preName = "before-restore"
+        do {
+            try createCheckpoint(projectName: preName, projectDirectory: projectDirectory)
+        } catch {
+            logger.warning("Auto-snapshot before restore failed: \(error.localizedDescription)")
+        }
         try git(["checkout", checkpoint.commitHash, "--", "."], in: projectDirectory)
     }
 

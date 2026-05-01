@@ -6,6 +6,15 @@
         <description>Most recent changes with links to updates.</description>
         <language>en</language>
         <item>
+            <title>Version 0.22.0</title>
+            <sparkle:version>0.22.0</sparkle:version>
+            <sparkle:shortVersionString>0.22.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:releaseNotesLink>https://github.com/javierpr0/Notchly/releases/tag/v0.22.0</sparkle:releaseNotesLink>
+            <pubDate>Fri, 01 May 2026 18:06:48 +0000</pubDate>
+            <enclosure url="https://github.com/javierpr0/Notchly/releases/download/v0.22.0/Notchly.dmg" sparkle:edSignature="q/KvgYPsFfT3N/uSPMfj23h/WyNne3LyvH0oKq/394D9Rtkog+yaWBWDttGwNKx611JIBIQe/9JKoDgR3IlrAA==" length="4174976" type="application/octet-stream"/>
+        </item>
+        <item>
             <title>Version 0.21.0</title>
             <sparkle:version>0.21.0</sparkle:version>
             <sparkle:shortVersionString>0.21.0</sparkle:shortVersionString>

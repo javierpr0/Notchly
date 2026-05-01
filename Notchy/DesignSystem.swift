@@ -29,10 +29,12 @@ enum DS {
         static let accentSoft = SwiftUI.Color(hex: 0x7C5CFF).opacity(0.18)
         static let accentGlow = SwiftUI.Color(hex: 0x7C5CFF).opacity(0.32)
 
-        // Status
+        // Status — saturated, system-feeling colors so the notch reads at a
+        // glance: amber for "working", orange for "needs your attention",
+        // green for "finished".
         static let statusWorking = SwiftUI.Color(hex: 0xFBBF24) // amber
-        static let statusWaiting = SwiftUI.Color(hex: 0xF87171) // rose
-        static let statusDone    = SwiftUI.Color(hex: 0x34D399) // emerald
+        static let statusWaiting = SwiftUI.Color(hex: 0xFB923C) // orange
+        static let statusDone    = SwiftUI.Color(hex: 0x22C55E) // green
         static let statusIdle    = SwiftUI.Color(hex: 0x5C6370)
 
         // Hover/press tints (overlay on top of any bg)

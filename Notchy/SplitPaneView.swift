@@ -90,7 +90,7 @@ struct SplitDividerView<First: View, Second: View>: View {
                 width: isHorizontal ? dividerThickness : nil,
                 height: isHorizontal ? nil : dividerThickness
             )
-            .background(isDragging ? Color.accentColor.opacity(0.6) : Color(white: 0.25))
+            .background(isDragging ? DS.Color.accent.opacity(0.65) : DS.Color.borderHairline)
             .gesture(
                 DragGesture(minimumDistance: 1)
                     .onChanged { value in
@@ -113,38 +113,48 @@ struct PaneControlsView: View {
     @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 2) {
-            controlButton(icon: "square.split.2x1", help: L10n.shared.splitRight) {
+        HStack(spacing: DS.Spacing.xxs) {
+            controlButton(icon: .splitLeft, help: L10n.shared.splitRight + " (←)") {
+                sessionStore.splitFocusedPane(direction: .horizontal, placeNewBefore: true)
+            }
+            controlButton(icon: .splitRight, help: L10n.shared.splitRight) {
                 sessionStore.splitFocusedPane(direction: .horizontal)
             }
-            controlButton(icon: "square.split.1x2", help: L10n.shared.splitDown) {
+            controlButton(icon: .splitUp, help: L10n.shared.splitDown + " (↑)") {
+                sessionStore.splitFocusedPane(direction: .vertical, placeNewBefore: true)
+            }
+            controlButton(icon: .splitDown, help: L10n.shared.splitDown) {
                 sessionStore.splitFocusedPane(direction: .vertical)
             }
-            controlButton(icon: "xmark", help: L10n.shared.closePane) {
+            Rectangle()
+                .fill(DS.Color.borderSubtle)
+                .frame(width: 1, height: 12)
+                .padding(.horizontal, 2)
+            controlButton(icon: .close, help: L10n.shared.closePane) {
                 sessionStore.closeFocusedPane()
             }
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, DS.Spacing.xs)
         .padding(.vertical, 4)
-        .background(.ultraThinMaterial.opacity(isHovering ? 1 : 0.7))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .opacity(isHovering ? 1 : 0.4)
+        .background(
+            RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .opacity(isHovering ? 1 : 0.78)
+        )
+        .opacity(isHovering ? 1 : 0.5)
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovering = hovering
-            }
+            withAnimation(DS.Motion.swift) { isHovering = hovering }
         }
     }
 
-    private func controlButton(icon: String, help: String, action: @escaping () -> Void) -> some View {
+    private func controlButton(icon: NotchyIconKind, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 10, weight: .medium))
+            NotchyIcon(kind: icon, size: 12)
+                .foregroundStyle(DS.Color.textSecondary)
                 .frame(width: 20, height: 18)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundColor(Color(nsColor: SessionStore.shared.currentTheme.chromeForeground))
         .help(help)
     }
 }
@@ -180,13 +190,21 @@ struct SplitPaneView: View {
                         .padding(6)
                 }
             }
-            .overlay {
+            // Focused pane indicator: subtle inner accent stripe on the
+            // top edge, no heavy stroke. Reads as "this is active" without
+            // adding a hard border to every pane.
+            .overlay(alignment: .top) {
                 if hasMultiplePanes && focusedPaneId == paneId {
-                    RoundedRectangle(cornerRadius: 4)
-                        .stroke(Color.accentColor.opacity(0.5), lineWidth: 1.5)
-                        .allowsHitTesting(false)
+                    LinearGradient(
+                        colors: [DS.Color.accent.opacity(0.85), DS.Color.accent.opacity(0)],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                    .frame(height: 2)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
                 }
             }
+            .animation(DS.Motion.swift, value: focusedPaneId)
 
         case .split(let splitId, let direction, let first, let second, let ratio):
             SplitDividerView(

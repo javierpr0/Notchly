@@ -272,14 +272,24 @@ class TerminalPanel: NSPanel {
             sessionStore.createQuickSession()
             return true
         }
-        // Cmd+D → split right
+        // Cmd+D → split right (new pane on the right)
         if mods == .command && chars == "d" {
             sessionStore.splitFocusedPane(direction: .horizontal)
             return true
         }
-        // Cmd+Shift+D → split down
+        // Cmd+Shift+D → split down (new pane below)
         if mods == [.command, .shift] && chars == "d" {
             sessionStore.splitFocusedPane(direction: .vertical)
+            return true
+        }
+        // Cmd+Opt+D → split left (current pane stays on the right)
+        if mods == [.command, .option] && chars == "d" {
+            sessionStore.splitFocusedPane(direction: .horizontal, placeNewBefore: true)
+            return true
+        }
+        // Cmd+Opt+Shift+D → split up (current pane stays below)
+        if mods == [.command, .option, .shift] && chars == "d" {
+            sessionStore.splitFocusedPane(direction: .vertical, placeNewBefore: true)
             return true
         }
         // Cmd+Shift+W → close focused pane

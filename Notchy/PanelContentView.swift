@@ -56,167 +56,133 @@ struct PanelContentView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Top bar: tabs + controls
-            HStack(spacing: 8) {
+            HStack(spacing: DS.Spacing.sm) {
 
-                HStack(spacing: 2) {
+                HStack(spacing: DS.Spacing.xxs) {
                     Button(action: { sessionStore.isPinned.toggle() }) {
-                        Image(systemName: sessionStore.isPinned ? "pin.fill" : "pin")
-                            .font(.system(size: 12, weight: .medium))
+                        NotchyIcon(kind: sessionStore.isPinned ? .pinFilled : .pin)
                             .rotationEffect(.degrees(sessionStore.isPinned ? 0 : 45))
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
+                            .dsChromeButton(isActive: sessionStore.isPinned)
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(Color(nsColor: theme.chromeForeground).opacity(foregroundOpacity))
+                    .foregroundStyle(DS.Color.textPrimary.opacity(foregroundOpacity))
                     .help(sessionStore.isPinned ? L10n.shared.unpinPanel : L10n.shared.pinPanelOpen)
 
                     Button(action: { showSettings.toggle() }) {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 12, weight: .medium))
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
-                            .opacity(showSettings ? 1.0 : foregroundOpacity)
+                        NotchyIcon(kind: .gear)
+                            .dsChromeButton(isActive: showSettings)
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(Color(nsColor: theme.chromeForeground))
+                    .foregroundStyle(DS.Color.textPrimary.opacity(showSettings ? 1.0 : foregroundOpacity))
                     .help(L10n.shared.settings)
                     .popover(isPresented: $showSettings, arrowEdge: .bottom) {
                         settingsMenuContent
                     }
                 }
-                .padding(.trailing, -4)
-                .padding(.leading, -10)
 
-                Rectangle()
-                    .foregroundColor(.clear)
-                    .frame(height: 12)
-                    .overlay(
-                        WindowDragArea(onDoubleClick: {
-                        sessionStore.isTerminalExpanded.toggle()
-                        onToggleExpand?()
-                        })
-                            .frame(height: 200)
-                    )
+                WindowDragArea(onDoubleClick: {
+                    sessionStore.isTerminalExpanded.toggle()
+                    onToggleExpand?()
+                })
+                .frame(maxWidth: .infinity)
+                .frame(height: 28)
+                .overlay(alignment: .center) {
+                    SessionTabBar(sessionStore: sessionStore)
+                        .allowsHitTesting(true)
+                }
 
-
-                SessionTabBar(sessionStore: sessionStore)
-
-                Rectangle()
-                    .foregroundColor(.clear)
-                    .frame(height: 12)
-                    .overlay(
-                        WindowDragArea(onDoubleClick: {
-                        sessionStore.isTerminalExpanded.toggle()
-                        onToggleExpand?()
-                        })
-                            .frame(height: 200)
-                    )
-
-                ZStack {
+                HStack(spacing: DS.Spacing.xxs) {
                     Button(action: { showClaudeMenu.toggle() }) {
                         ClaudeIconView()
                             .frame(width: 14, height: 14)
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
-                            .opacity(showClaudeMenu ? 1.0 : foregroundOpacity)
+                            .dsChromeButton(isActive: showClaudeMenu)
                     }
                     .buttonStyle(.plain)
                     .help(L10n.shared.launchClaude)
                     .popover(isPresented: $showClaudeMenu, arrowEdge: .bottom) {
                         claudeMenuContent
                     }
-                }
-                .padding(.leading, -4)
 
-                ZStack {
                     Button(action: { sessionStore.createQuickSession() }) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 12, weight: .medium))
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
+                        NotchyIcon(kind: .plus)
+                            .dsChromeButton()
                     }
                     .buttonStyle(.plain)
-                    .foregroundColor(Color(nsColor: theme.chromeForeground).opacity(foregroundOpacity))
+                    .foregroundStyle(DS.Color.textPrimary.opacity(foregroundOpacity))
                     .help(L10n.shared.newTerminal)
                 }
-                .padding(.leading, -4)
-                .padding(.trailing, -10)
             }
-            .padding(.horizontal, 12)
-            .background(Color(nsColor: theme.chromeBackground).opacity(chromeBackgroundOpacity))
+            .padding(.horizontal, DS.Spacing.sm)
+            .padding(.vertical, DS.Spacing.xs)
+            .background(DS.Color.bgElevated.opacity(chromeBackgroundOpacity))
+            // Subtle gradient transition into the terminal area instead of a
+            // hard 1px Divider.
+            .overlay(alignment: .bottom) {
+                LinearGradient(
+                    colors: [DS.Color.borderSubtle, .clear],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .frame(height: 6)
+                .offset(y: 6)
+                .allowsHitTesting(false)
+            }
 
             if sessionStore.isTerminalExpanded, sessionStore.checkpointStatus != nil || sessionStore.lastCheckpoint != nil {
-                HStack(spacing: 6) {
+                HStack(spacing: DS.Spacing.sm) {
                     if let status = sessionStore.checkpointStatus {
-                        Image(systemName: "progress.indicator")
-                            .font(.system(size: 10, weight: .semibold))
+                        NotchyIcon(kind: .working, size: 10)
+                            .foregroundStyle(DS.Color.accent)
                         Text(status)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(DS.Font.bodyMedium)
+                            .foregroundStyle(DS.Color.textPrimary)
                         Spacer()
-                        Button {
-                            showRestoreConfirmation = true
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "clock.arrow.circlepath")
-                                Text(L10n.shared.restoreLastCheckpoint)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color(nsColor: theme.chromeBackgroundDarker))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Color.white.opacity(0.8))
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                        .padding(.trailing, 6)
-                        .opacity(0)
-                        
                     } else if let checkpoint = sessionStore.lastCheckpoint {
-                        Image(systemName: "bookmark.fill")
-                            .font(.system(size: 10, weight: .semibold))
+                        NotchyIcon(kind: .bookmark, size: 11)
+                            .foregroundStyle(DS.Color.accent)
                         Text(L10n.shared.checkpointSaved)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(DS.Font.bodyMedium)
+                            .foregroundStyle(DS.Color.textPrimary)
                         Text(checkpoint.displayName)
-                            .font(.system(size: 10))
-                            .foregroundColor(Color(nsColor: theme.chromeForeground).opacity(0.5))
+                            .font(DS.Font.caption)
+                            .foregroundStyle(DS.Color.textTertiary)
 
                         Spacer()
 
                         Button {
                             showRestoreConfirmation = true
                         } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "clock.arrow.circlepath")
+                            HStack(spacing: DS.Spacing.xs) {
+                                NotchyIcon(kind: .restore, size: 11)
                                 Text(L10n.shared.restoreLastCheckpoint)
+                                    .font(DS.Font.caption)
                             }
+                            .padding(.horizontal, DS.Spacing.sm)
+                            .padding(.vertical, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
+                                    .fill(DS.Color.accentSoft)
+                            )
+                            .foregroundStyle(DS.Color.accent)
                         }
                         .buttonStyle(.plain)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color(nsColor: theme.chromeBackgroundDarker))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Color.white.opacity(0.8))
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
-                        .padding(.trailing, 6)
 
                         Button(action: { sessionStore.lastCheckpoint = nil }) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 9, weight: .bold))
+                            NotchyIcon(kind: .close, size: 10)
+                                .foregroundStyle(DS.Color.textTertiary)
+                                .frame(width: 18, height: 18)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .foregroundColor(Color(nsColor: theme.chromeForeground).opacity(0.4))
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color(nsColor: theme.chromeBackgroundDarker).opacity(chromeBackgroundOpacity))
-                .foregroundColor(Color(nsColor: theme.chromeForeground).opacity(0.8))
+                .padding(.horizontal, DS.Spacing.md)
+                .padding(.vertical, DS.Spacing.xs)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(DS.Color.bgChrome.opacity(chromeBackgroundOpacity))
             }
 
             if sessionStore.isTerminalExpanded {
-                Divider()
-
-                // Terminal area
+                // Terminal area — soft gradient transition (no hard Divider)
                 if let session = sessionStore.activeSession {
                     if session.hasStarted {
                         SplitPaneView(
@@ -239,9 +205,8 @@ struct PanelContentView: View {
                 }
             }
         }
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 8.5, bottomLeadingRadius: 9.5, bottomTrailingRadius: 9.5, topTrailingRadius: 8.5))
         .background(Color(nsColor: theme.background).opacity(chromeBackgroundOpacity))
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 8.5, bottomLeadingRadius: 9.5, bottomTrailingRadius: 9.5, topTrailingRadius: 8.5))
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay {
             if sessionStore.showCommandPalette,
                let session = sessionStore.activeSession {
@@ -370,28 +335,31 @@ struct PanelContentView: View {
                     selectedThemeId = theme.id
                     sessionStore.currentTheme = theme
                 } label: {
-                    HStack(spacing: 8) {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(Color(nsColor: theme.background))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 3)
-                                    .stroke(Color(nsColor: theme.foreground), lineWidth: 1)
-                            )
-                            .frame(width: 16, height: 16)
+                    HStack(spacing: DS.Spacing.sm) {
+                        // Theme swatch — bg with foreground accent dot, no border
+                        ZStack(alignment: .bottomTrailing) {
+                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .fill(Color(nsColor: theme.background))
+                            Circle()
+                                .fill(Color(nsColor: theme.foreground))
+                                .frame(width: 5, height: 5)
+                                .padding(2)
+                        }
+                        .frame(width: 16, height: 16)
                         Text(theme.name)
-                            .font(.system(size: 12))
+                            .font(DS.Font.title)
+                            .foregroundStyle(DS.Color.textPrimary)
                         Spacer()
                         if theme.id == selectedThemeId {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(.accentColor)
+                            NotchyIcon(kind: .done, size: 11)
+                                .foregroundStyle(DS.Color.accent)
                         }
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 2)
+                .padding(.horizontal, DS.Spacing.md)
+                .padding(.vertical, 3)
             }
 
             Divider().padding(.vertical, 6)
@@ -410,8 +378,8 @@ struct PanelContentView: View {
                     Image(systemName: "minus")
                         .font(.system(size: 11, weight: .bold))
                         .frame(width: 28, height: 28)
-                        .background(Color.white.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .background(DS.Color.hoverTint)
+                        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -427,8 +395,8 @@ struct PanelContentView: View {
                     Image(systemName: "plus")
                         .font(.system(size: 11, weight: .bold))
                         .frame(width: 28, height: 28)
-                        .background(Color.white.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .background(DS.Color.hoverTint)
+                        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -445,8 +413,8 @@ struct PanelContentView: View {
                         .fixedSize()
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .background(DS.Color.hoverTint)
+                        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous))
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

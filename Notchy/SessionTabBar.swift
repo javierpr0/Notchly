@@ -16,7 +16,7 @@ struct SessionTabBar: View {
     @State private var lastSwapDate: Date = .distantPast
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: DS.Spacing.xxs) {
             ForEach(sessionStore.sessions) { session in
                 let index = sessionStore.sessions.firstIndex(where: { $0.id == session.id })
                 SessionTab(
@@ -49,11 +49,11 @@ struct SessionTabBar: View {
                 )
                 .offset(x: draggingSessionId == session.id ? dragOffset - dragAccumulatedShift : 0)
                 .zIndex(draggingSessionId == session.id ? 1 : 0)
-                .opacity(draggingSessionId == session.id ? 0.8 : 1.0)
-                .scaleEffect(draggingSessionId == session.id ? 1.05 : 1.0)
-                .animation(.easeInOut(duration: 0.15), value: draggingSessionId)
+                .opacity(draggingSessionId == session.id ? 0.85 : 1.0)
+                .scaleEffect(draggingSessionId == session.id ? 1.04 : 1.0)
+                .animation(DS.Motion.snap, value: draggingSessionId)
                 .gesture(
-                    DragGesture(minimumDistance: 8, coordinateSpace: .named("tabBar"))
+                    DragGesture(minimumDistance: 6, coordinateSpace: .named("tabBar"))
                         .onChanged { value in
                             if draggingSessionId == nil {
                                 draggingSessionId = session.id
@@ -61,8 +61,10 @@ struct SessionTabBar: View {
                             }
                             dragOffset = value.translation.width
 
-                            // Cooldown: skip if last swap was < 250ms ago
-                            guard Date().timeIntervalSince(lastSwapDate) > 0.25 else { return }
+                            // Cooldown: skip if last swap was < 100ms ago.
+                            // Tighter than the previous 250ms — feels much
+                            // more responsive when dragging quickly.
+                            guard Date().timeIntervalSince(lastSwapDate) > 0.10 else { return }
                             guard let currentIndex = sessionStore.sessions.firstIndex(where: { $0.id == session.id }) else { return }
 
                             let visualOffset = dragOffset - dragAccumulatedShift
@@ -72,26 +74,26 @@ struct SessionTabBar: View {
                                 let rightNeighbor = sessionStore.sessions[currentIndex + 1]
                                 if let neighborFrame = tabFrames[rightNeighbor.id],
                                    visualOffset > neighborFrame.width * 0.5 {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                    withAnimation(DS.Motion.snap) {
                                         sessionStore.sessions.swapAt(currentIndex, currentIndex + 1)
                                     }
-                                    dragAccumulatedShift += neighborFrame.width + 2
+                                    dragAccumulatedShift += neighborFrame.width + DS.Spacing.xxs
                                     lastSwapDate = Date()
                                 }
                             } else if visualOffset < 0, currentIndex > 0 {
                                 let leftNeighbor = sessionStore.sessions[currentIndex - 1]
                                 if let neighborFrame = tabFrames[leftNeighbor.id],
                                    -visualOffset > neighborFrame.width * 0.5 {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                    withAnimation(DS.Motion.snap) {
                                         sessionStore.sessions.swapAt(currentIndex, currentIndex - 1)
                                     }
-                                    dragAccumulatedShift -= neighborFrame.width + 2
+                                    dragAccumulatedShift -= neighborFrame.width + DS.Spacing.xxs
                                     lastSwapDate = Date()
                                 }
                             }
                         }
                         .onEnded { _ in
-                            withAnimation(.easeOut(duration: 0.15)) {
+                            withAnimation(DS.Motion.snap) {
                                 dragOffset = 0
                                 dragAccumulatedShift = 0
                             }
@@ -166,38 +168,43 @@ struct SessionTab: View {
 
     @ViewBuilder
     private var statusIndicator: some View {
-        switch terminalStatus {
-        case .working:
-            TabSpinnerView()
-                .frame(width: 8, height: 8)
-        case .waitingForInput:
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundColor(.yellow)
-        case .taskCompleted:
-            Image(systemName: "checkmark")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundColor(.green)
-        case .idle, .interrupted:
-            Circle()
-                .fill(Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(0.2))
-                .frame(width: 5, height: 5)
+        Group {
+            switch terminalStatus {
+            case .working:
+                NotchyIcon(kind: .working, size: 9)
+                    .foregroundStyle(DS.Color.statusWorking)
+            case .waitingForInput:
+                NotchyIcon(kind: .waiting, size: 9)
+                    .foregroundStyle(DS.Color.statusWaiting)
+            case .taskCompleted:
+                NotchyIcon(kind: .done, size: 9)
+                    .foregroundStyle(DS.Color.statusDone)
+            case .idle, .interrupted:
+                Circle()
+                    .fill(DS.Color.statusIdle.opacity(0.6))
+                    .frame(width: 5, height: 5)
+                    .frame(width: 9, height: 9)
+            }
         }
+        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+        .animation(DS.Motion.snap, value: terminalStatus)
     }
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: DS.Spacing.xs) {
             statusIndicator
 
             ZStack {
+                // Stable layout: invisible bold copy reserves width so the
+                // tab does not jump when the active weight changes.
                 Text(name)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(DS.Font.bodyBold)
                     .lineLimit(1)
                     .opacity(0)
 
                 if isRenaming {
                     TextField("", text: $renameText, onCommit: commitRename)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(DS.Font.bodyBold)
                         .textFieldStyle(.plain)
                         .multilineTextAlignment(.center)
                         .focused($renameFieldFocused)
@@ -205,32 +212,54 @@ struct SessionTab: View {
                         .frame(minWidth: 40)
                 } else {
                     Text(name)
-                        .font(.system(size: 11, weight: isActive ? .medium : .regular))
+                        .font(isActive ? DS.Font.bodyMedium : DS.Font.body)
                         .lineLimit(1)
-                        .foregroundColor(Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(isActive ? foregroundOpacity : foregroundOpacity * 0.6))
+                        .foregroundStyle(
+                            isActive
+                                ? DS.Color.textPrimary.opacity(foregroundOpacity)
+                                : DS.Color.textSecondary.opacity(foregroundOpacity)
+                        )
                 }
             }
 
             if isHovering {
                 Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundColor(Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(0.5))
-                        .frame(width: 12, height: 12)
-                        .background(Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(0.1))
-                        .clipShape(Circle())
+                    NotchyIcon(kind: .close, size: 9)
+                        .foregroundStyle(DS.Color.textTertiary)
+                        .frame(width: 14, height: 14)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
+        .padding(.horizontal, DS.Spacing.sm + 2)
+        .padding(.vertical, 4)
         .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(isActive
-                    ? Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(0.1)
-                    : isHovering ? Color(nsColor: SessionStore.shared.currentTheme.chromeForeground).opacity(0.05) : Color.clear)
+            RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
+                .fill(
+                    isActive ? DS.Color.activeTint
+                    : (isHovering ? DS.Color.hoverTint : Color.clear)
+                )
         )
+        // Active accent underline (no border box) — gives clear hierarchy.
+        .overlay(alignment: .bottom) {
+            if isActive {
+                RoundedRectangle(cornerRadius: 1, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [DS.Color.accent.opacity(0.85), DS.Color.accent],
+                            startPoint: .leading, endPoint: .trailing
+                        )
+                    )
+                    .frame(height: 2)
+                    .padding(.horizontal, DS.Spacing.xs)
+                    .offset(y: 1)
+                    .transition(.opacity)
+            }
+        }
+        .animation(DS.Motion.swift, value: isHovering)
+        .animation(DS.Motion.snap, value: isActive)
         .onHover { hovering in
             isHovering = hovering
             if hovering {

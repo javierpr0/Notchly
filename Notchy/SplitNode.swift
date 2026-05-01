@@ -60,25 +60,29 @@ indirect enum SplitNode: Codable, Identifiable, Equatable {
     }
 
     /// Replace the target pane with a split containing the original + a new pane.
-    /// Returns the new tree and the new pane's ID.
-    func splitting(_ paneId: UUID, direction: SplitDirection) -> (SplitNode, UUID) {
+    /// Returns the new tree and the new pane's ID. When `placeNewBefore` is
+    /// true the newly created pane sits left/above of the original; otherwise
+    /// it sits right/below (the historical default).
+    func splitting(_ paneId: UUID, direction: SplitDirection, placeNewBefore: Bool = false) -> (SplitNode, UUID) {
         switch self {
         case .pane(let id, let dir):
             guard id == paneId else { return (self, id) }
             let newPaneId = UUID()
+            let original = SplitNode.pane(id: id, workingDirectory: dir)
+            let fresh = SplitNode.pane(id: newPaneId, workingDirectory: dir)
             let node = SplitNode.split(
                 id: UUID(), direction: direction,
-                first: .pane(id: id, workingDirectory: dir),
-                second: .pane(id: newPaneId, workingDirectory: dir),
+                first: placeNewBefore ? fresh : original,
+                second: placeNewBefore ? original : fresh,
                 ratio: 0.5
             )
             return (node, newPaneId)
         case .split(let id, let dir, let first, let second, let ratio):
             if first.containsPane(paneId) {
-                let (newFirst, newId) = first.splitting(paneId, direction: direction)
+                let (newFirst, newId) = first.splitting(paneId, direction: direction, placeNewBefore: placeNewBefore)
                 return (.split(id: id, direction: dir, first: newFirst, second: second, ratio: ratio), newId)
             } else if second.containsPane(paneId) {
-                let (newSecond, newId) = second.splitting(paneId, direction: direction)
+                let (newSecond, newId) = second.splitting(paneId, direction: direction, placeNewBefore: placeNewBefore)
                 return (.split(id: id, direction: dir, first: first, second: newSecond, ratio: ratio), newId)
             }
             return (self, id)

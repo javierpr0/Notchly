@@ -450,10 +450,12 @@ class SessionStore {
         persistSessions()
     }
 
-    func splitFocusedPane(direction: SplitDirection) {
+    func splitFocusedPane(direction: SplitDirection, placeNewBefore: Bool = false) {
         guard let index = sessions.firstIndex(where: { $0.id == activeSessionId }) else { return }
         let paneId = sessions[index].focusedPaneId
-        let (newRoot, newPaneId) = sessions[index].splitRoot.splitting(paneId, direction: direction)
+        let (newRoot, newPaneId) = sessions[index].splitRoot.splitting(
+            paneId, direction: direction, placeNewBefore: placeNewBefore
+        )
         sessions[index].splitRoot = newRoot
         sessions[index].focusedPaneId = newPaneId
         persistSessions()

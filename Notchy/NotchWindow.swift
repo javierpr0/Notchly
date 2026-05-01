@@ -190,7 +190,7 @@ class NotchWindow: NSPanel {
         // Bounce animation using display link
         let startFrame = frame
         let startTime = CACurrentMediaTime()
-        let duration: Double = 0.6
+        let duration: Double = 0.5
 
         // Cancel any previous animation so two wrappers don't fight over the
         // window frame each refresh cycle.
@@ -272,10 +272,11 @@ class NotchWindow: NSPanel {
         displayLink.start()
     }
 
-    /// Spring / bounce easing — overshoots then settles
+    /// Spring / bounce easing — overshoots slightly then settles. Tuned for
+    /// a snappier feel than the original (higher frequency, more damping).
     private static func bounceEase(_ t: Double) -> Double {
-        let omega = 12.0  // frequency
-        let zeta = 0.4    // damping
+        let omega = 14.0  // frequency
+        let zeta = 0.55   // damping
         return 1.0 - exp(-zeta * omega * t) * cos(sqrt(1.0 - zeta * zeta) * omega * t)
     }
 
@@ -495,6 +496,7 @@ class NotchPillView: NSView {
     }
 
     private let shapeLayer = CAShapeLayer()
+    private let gradientLayer = CAGradientLayer()
     static let earRadius: CGFloat = 10
 
     override init(frame: NSRect) {
@@ -502,8 +504,19 @@ class NotchPillView: NSView {
         wantsLayer = true
         layer?.masksToBounds = false
         layer?.backgroundColor = .clear
+
+        // Subtle vertical gradient — keeps the notch reading as black against
+        // the menu bar but lifts it slightly so the pill has dimension.
+        gradientLayer.colors = [
+            NSColor(red: 0.04, green: 0.04, blue: 0.06, alpha: 1).cgColor,
+            NSColor.black.cgColor
+        ]
+        gradientLayer.startPoint = CGPoint(x: 0.5, y: 1.0)
+        gradientLayer.endPoint = CGPoint(x: 0.5, y: 0.0)
+        // Mask the gradient with the pill shape so the bounds stay correct.
         shapeLayer.fillColor = NSColor.black.cgColor
-        layer?.addSublayer(shapeLayer)
+        gradientLayer.mask = shapeLayer
+        layer?.addSublayer(gradientLayer)
     }
 
     required init?(coder: NSCoder) {
@@ -522,6 +535,7 @@ class NotchPillView: NSView {
 
         let ear = Self.earRadius
         shapeLayer.frame = CGRect(x: 0, y: 0, width: w, height: h)
+        gradientLayer.frame = CGRect(x: 0, y: 0, width: w, height: h)
 
         let path = CGMutablePath()
 
@@ -616,18 +630,16 @@ struct NotchPillContent: View {
 
                     switch displayState {
                     case .taskCompleted:
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.green)
+                        NotchyIcon(kind: .done, size: 16)
+                            .foregroundStyle(DS.Color.statusDone)
                             .transition(.scale.combined(with: .opacity))
                     case .waitingForInput:
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.yellow)
+                        NotchyIcon(kind: .waiting, size: 16)
+                            .foregroundStyle(DS.Color.statusWaiting)
                             .transition(.scale.combined(with: .opacity))
                     case .working:
-                        SpinnerView()
-                            .frame(width: 14, height: 14)
+                        NotchyIcon(kind: .working, size: 14)
+                            .foregroundStyle(DS.Color.statusWorking)
                             .transition(.scale.combined(with: .opacity))
                     case .idle:
                         EmptyView()

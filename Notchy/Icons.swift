@@ -26,10 +26,16 @@ struct NotchyIcon: View {
     let kind: NotchyIconKind
     var size: CGFloat = 14
     var weight: CGFloat = 1.5
+    /// Tint applied to the rendered Canvas output. Canvas drawing uses
+    /// `.color(.primary)` internally and does NOT inherit
+    /// `.foregroundStyle(...)` from the parent view, so we multiply the
+    /// rendered (white) pixels by `tint` here. Default white = no change.
+    var tint: Color = .white
 
     var body: some View {
         shape
             .frame(width: size, height: size)
+            .colorMultiply(tint)
     }
 
     // Split into helpers so the Swift type-checker can resolve each branch

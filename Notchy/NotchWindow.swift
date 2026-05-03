@@ -630,16 +630,13 @@ struct NotchPillContent: View {
 
                     switch displayState {
                     case .taskCompleted:
-                        NotchyIcon(kind: .done, size: 16)
-                            .foregroundStyle(DS.Color.statusDone)
+                        NotchyIcon(kind: .done, size: 16, tint: DS.Color.statusDone)
                             .transition(.scale.combined(with: .opacity))
                     case .waitingForInput:
-                        NotchyIcon(kind: .waiting, size: 16)
-                            .foregroundStyle(DS.Color.statusWaiting)
+                        NotchyIcon(kind: .waiting, size: 16, tint: DS.Color.statusWaiting)
                             .transition(.scale.combined(with: .opacity))
                     case .working:
-                        NotchyIcon(kind: .working, size: 14)
-                            .foregroundStyle(DS.Color.statusWorking)
+                        NotchyIcon(kind: .working, size: 14, tint: DS.Color.statusWorking)
                             .transition(.scale.combined(with: .opacity))
                     case .idle:
                         EmptyView()

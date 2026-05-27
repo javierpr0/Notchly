@@ -28,6 +28,13 @@ class SessionStore {
             UserDefaults.standard.set(isPinned, forKey: "isPinned")
         }
     }
+    /// When true, sleeping tabs are hidden from the tab strip (still in the
+    /// sessions list, accessible via the "💤 N" pill or the menu bar item).
+    var hideSleepingTabs: Bool = UserDefaults.standard.bool(forKey: "hideSleepingTabs") {
+        didSet {
+            UserDefaults.standard.set(hideSleepingTabs, forKey: "hideSleepingTabs")
+        }
+    }
     var isTerminalExpanded = true
     var isWindowFocused = true
     var isShowingDialog = false
@@ -210,9 +217,14 @@ class SessionStore {
         persistSessions()
     }
 
-    /// Mark session as started (terminal will be created when view renders)
+    /// Mark session as started (terminal will be created when view renders).
+    /// If the session is sleeping, wake it on the same tick so a single user
+    /// action (clicking the tab or the placeholder) is enough to respawn.
     func startSessionIfNeeded(_ id: UUID) {
         guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        if sessions[index].isSleeping {
+            sessions[index].isSleeping = false
+        }
         if !sessions[index].hasStarted {
             sessions[index].hasStarted = true
         }
@@ -513,6 +525,27 @@ class SessionStore {
         } else {
             sleepSession(id)
         }
+    }
+
+    /// Sleeps every non-sleeping session except the active one (or `keepId`).
+    /// One-shot way to free resources when many tabs accumulated.
+    func sleepInactiveTabs(except keepId: UUID? = nil) {
+        let preserve = keepId ?? activeSessionId
+        for session in sessions where !session.isSleeping && session.id != preserve {
+            sleepSession(session.id)
+        }
+    }
+
+    /// Wakes every sleeping session. Used when the user wants to see all tabs
+    /// live again.
+    func wakeAllTabs() {
+        for session in sessions where session.isSleeping {
+            wakeSession(session.id)
+        }
+    }
+
+    var sleepingTabCount: Int {
+        sessions.filter { $0.isSleeping }.count
     }
 
     func closeSession(_ id: UUID) {

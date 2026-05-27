@@ -15,9 +15,21 @@ struct SessionTabBar: View {
     @State private var dragAccumulatedShift: CGFloat = 0
     @State private var lastSwapDate: Date = .distantPast
 
+    /// Tabs shown in the strip. When `hideSleepingTabs` is on we drop sleeping
+    /// entries so dormant work doesn't crowd the active list. The active tab
+    /// is always shown (even if sleeping, which only happens transiently while
+    /// it's waking up) so the user never sees the strip "lose" their current
+    /// selection.
+    private var visibleSessions: [TerminalSession] {
+        if sessionStore.hideSleepingTabs {
+            return sessionStore.sessions.filter { !$0.isSleeping || $0.id == sessionStore.activeSessionId }
+        }
+        return sessionStore.sessions
+    }
+
     var body: some View {
         HStack(spacing: DS.Spacing.xxs) {
-            ForEach(sessionStore.sessions) { session in
+            ForEach(visibleSessions) { session in
                 let index = sessionStore.sessions.firstIndex(where: { $0.id == session.id })
                 SessionTab(
                     session: session,
@@ -102,12 +114,44 @@ struct SessionTabBar: View {
                         }
                 )
             }
+
+            // When sleeping tabs are hidden, surface their count as a small
+            // pill so the user knows they exist and can click to reveal them.
+            if sessionStore.hideSleepingTabs && sessionStore.sleepingTabCount > 0 {
+                Button {
+                    sessionStore.hideSleepingTabs = false
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "moon.fill")
+                            .font(.system(size: 7, weight: .medium))
+                        Text(L10n.shared.sleepingCount(sessionStore.sleepingTabCount))
+                            .font(DS.Font.caption)
+                    }
+                    .foregroundStyle(DS.Color.textTertiary)
+                    .padding(.horizontal, DS.Spacing.sm)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
+                            .fill(DS.Color.hoverTint)
+                    )
+                }
+                .buttonStyle(.plain)
+                .help(L10n.shared.showSleeping)
+                .contextMenu {
+                    Button(L10n.shared.wakeAll) {
+                        sessionStore.wakeAllTabs()
+                    }
+                }
+                .transition(.scale.combined(with: .opacity))
+            }
         }
         .coordinateSpace(name: "tabBar")
         .onPreferenceChange(TabFramePreferenceKey.self) { frames in
             tabFrames = frames
         }
         .fixedSize(horizontal: true, vertical: false)
+        .animation(DS.Motion.snap, value: sessionStore.hideSleepingTabs)
+        .animation(DS.Motion.snap, value: sessionStore.sleepingTabCount)
     }
 }
 
@@ -313,6 +357,18 @@ struct SessionTab: View {
 
             Button(session.isSleeping ? L10n.shared.wakeTab : L10n.shared.sleepTab) {
                 SessionStore.shared.toggleSleep(session.id)
+            }
+
+            if SessionStore.shared.sessions.count > 1 {
+                Button(L10n.shared.sleepOthers) {
+                    SessionStore.shared.sleepInactiveTabs(except: session.id)
+                }
+            }
+
+            if SessionStore.shared.sleepingTabCount > 0 {
+                Button(SessionStore.shared.hideSleepingTabs ? L10n.shared.showSleeping : L10n.shared.hideSleeping) {
+                    SessionStore.shared.hideSleepingTabs.toggle()
+                }
             }
 
             Button(L10n.shared.restart) {

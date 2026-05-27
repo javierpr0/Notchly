@@ -97,13 +97,20 @@ final class L10n {
     var restoreLastCheckpointMenu: String { isSpanish ? "Restaurar último punto" : "Restore Last Checkpoint" }
     var moveLeft: String { isSpanish ? "Mover a la izquierda" : "Move Left" }
     var moveRight: String { isSpanish ? "Mover a la derecha" : "Move Right" }
-    var sessionHistory: String { isSpanish ? "Historial de sesi��n" : "Session History" }
+    var sessionHistory: String { isSpanish ? "Historial de sesión" : "Session History" }
     var renameTab: String { isSpanish ? "Renombrar pestaña" : "Rename Tab" }
     var restart: String { isSpanish ? "Reiniciar" : "Restart" }
     var close: String { isSpanish ? "Cerrar" : "Close" }
     var restore: String { isSpanish ? "Restaurar" : "Restore" }
     var sleepTab: String { isSpanish ? "Dormir pestaña" : "Sleep Tab" }
     var wakeTab: String { isSpanish ? "Despertar pestaña" : "Wake Tab" }
+    var sleepOthers: String { isSpanish ? "Dormir las demás" : "Sleep Other Tabs" }
+    var wakeAll: String { isSpanish ? "Despertar todas" : "Wake All Tabs" }
+    var hideSleeping: String { isSpanish ? "Ocultar dormidas" : "Hide Sleeping" }
+    var showSleeping: String { isSpanish ? "Mostrar dormidas" : "Show Sleeping" }
+    func sleepingCount(_ n: Int) -> String {
+        isSpanish ? "\(n) dormida\(n == 1 ? "" : "s")" : "\(n) sleeping"
+    }
 
     // MARK: - Split Pane
 

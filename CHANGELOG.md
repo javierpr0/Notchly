@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-05-27
+
+### Added
+- Sleep tabs: dorms a tab's shell processes to free RAM/CPU while preserving the split layout and working directories. Right-click any tab → "Dormir pestaña". Selecting a sleeping tab wakes it instantly and respawns the shell in the same directory.
+- "Dormir las demás" / "Despertar todas" context menu shortcuts to bulk-sleep every other tab or wake every sleeping one at once.
+- "Ocultar dormidas" toggle that hides sleeping tabs from the strip and replaces them with a compact "💤 N dormidas" pill at the end of the tab bar.
+- Pre-warmed terminal pool: one idle shell sits ready in `$HOME` so the next `+`-tab open skips the ~100–500 ms fork + exec + shell-startup cost. Pool re-arms after every claim. The warm path is skipped for projects with a custom `shell` or `env` in `.notchy.json` so user config is honored.
+- Workspace trust prompt for `.notchy.json`: untrusted projects can no longer auto-execute a `command` or `shell` override when opened. Three-button dialog (Trust & Apply / Open Without Config / Don't Ask Again) per directory, persisted.
+
+### Changed
+- `.notchy.json` shell paths are now restricted to `/bin/`, `/usr/bin/`, `/usr/local/bin/`, `/opt/homebrew/bin/` and must point to an executable file. Anything else is silently rejected.
+- `.notchy.json` env vars are filtered before merging: `PATH`, `SHELL`, `HOME`, `USER`, `LOGNAME`, `TMPDIR`, `IFS`, and any `DYLD_*` / `LD_*` keys are dropped so a malicious config cannot pivot the loader.
+- Session persistence is now debounced (1.5 s) so tab reorders, working-directory updates, and status changes coalesce into one UserDefaults write instead of one per mutation.
+- Terminal history writes are batched per session (250 ms debounce or 32 KB backpressure) so heavy output (compiles, `npm install`, `git log`) no longer issues a seek + write + chmod per chunk. History still flushes on quit, deletion, and read.
+- Status detection scans only the last 40 rows of the terminal buffer instead of the whole screen, cutting per-tick work during bursts.
+- Autocomplete keeps a per-command lowercased cache so the suggestion loop no longer re-lowercases hundreds of strings on every keystroke.
+- Split-pane divider is now an AppKit-native hit zone with `NSTrackingArea`-driven cursor updates. Every divider in a nested split tree is draggable, the cursor swaps to `resizeLeftRight` / `resizeUpDown` immediately on hover, and the drag math anchors at mouse-down instead of compounding through SwiftUI re-evaluations.
+- Git checkpoint binary resolution now honors `$PATH` first (so asdf / mise / brew shims work), and writes the temp index under a freshly-created `0o700` directory so a hostile symlink at the predicted path cannot redirect the write.
+
+### Fixed
+- Terminal no longer goes "deaf" after resizing the panel or a split pane. The view reclaims `firstResponder` and forces a redraw on `viewDidEndLiveResize`, on `NSWindow.didEndLiveResizeNotification`, and after the divider gesture releases, so typed characters appear immediately without an extra click.
+- Session History context-menu label rendered as `Historial de sesi��n` because the source file held replacement characters; the string is now `Historial de sesión`.
+- `destroyTerminal` now calls `removeFromSuperview` so the PTY actually closes when a session is restarted or put to sleep; previously the shell process kept running until the SwiftUI host released the view.
+- OSC 7 directory updates from terminal output now require a valid `file://` URL, reject NUL/CR/LF, are canonicalized through `standardizedFileURL`, and must resolve to an existing directory before being applied — a hostile script can no longer pivot the working directory.
+- Project name is sanitized before being embedded in a Git ref so spaces, `..`, `~`, `.lock` suffixes, and other invalid characters can't break `update-ref` or the snapshot listing glob.
+- `CVDisplayLinkWrapper.stop()` now releases its retained reference even when the callback never fires (display sleep, external stop), fixing a small leak per notch expand/collapse animation.
+- Status timer / autocomplete timer are invalidated in `ClickThroughTerminalView.deinit` so a torn-down pane doesn't fire callbacks against a freed view.
+
 ## [0.20.0] - 2026-04-23
 
 ### Fixed
@@ -190,7 +218,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global backtick hotkey to toggle panel
 - Pin panel open option
 
-[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/javierpr0/notchly/compare/v0.22.5...v0.23.0
 [0.20.0]: https://github.com/javierpr0/notchly/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/javierpr0/notchly/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/javierpr0/notchly/compare/v0.17.0...v0.18.0

@@ -102,6 +102,12 @@ struct SplitDividerView<First: View, Second: View>: View {
                     .onEnded { _ in
                         isDragging = false
                         sessionStore.persistSplitRatio()
+                        // Restore terminal firstResponder after the drag gesture
+                        // releases. Without this the terminal stays "deaf" until
+                        // the user clicks back into it.
+                        if let paneId = sessionStore.activeSession?.focusedPaneId {
+                            TerminalManager.shared.focusTerminal(for: paneId)
+                        }
                     }
             )
     }

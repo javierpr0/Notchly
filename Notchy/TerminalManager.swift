@@ -114,6 +114,20 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         }
     }
 
+    /// After a live resize (window drag, split divider drag) SwiftUI sometimes
+    /// drops firstResponder onto its own host view and the terminal layer
+    /// doesn't re-mark dirty. The cursor stops blinking and typed characters
+    /// don't appear until the user clicks back into the terminal. Reclaim
+    /// firstResponder and force a redraw at the resize boundary.
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        needsDisplay = true
+        guard let window, window.isKeyWindow else { return }
+        if window.firstResponder !== self {
+            window.makeFirstResponder(self)
+        }
+    }
+
     private func installClickMonitor() {
         clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let self, let id = self.sessionId,

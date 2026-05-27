@@ -83,6 +83,23 @@ class TerminalPanel: NSPanel {
             name: NSWindow.didResizeNotification,
             object: self
         )
+
+        // After a live drag of the panel edge, SwiftUI/AppKit can leave the
+        // terminal without firstResponder. The user keeps typing into nothing
+        // until they click back into the terminal. Restoring focus on the
+        // resize-end boundary fixes the "text only appears after click" bug.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleDidEndLiveResize),
+            name: NSWindow.didEndLiveResizeNotification,
+            object: self
+        )
+    }
+
+    @objc private func handleDidEndLiveResize() {
+        guard isKeyWindow,
+              let paneId = sessionStore.activeSession?.focusedPaneId else { return }
+        TerminalManager.shared.focusTerminal(for: paneId)
     }
 
     private var lastKnownWidth: CGFloat = 0

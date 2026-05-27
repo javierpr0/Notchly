@@ -176,6 +176,11 @@ struct SessionTab: View {
                 NotchyIcon(kind: .waiting, size: 9, tint: DS.Color.statusWaiting)
             case .taskCompleted:
                 NotchyIcon(kind: .done, size: 9, tint: DS.Color.statusDone)
+            case .sleeping:
+                Image(systemName: "moon.fill")
+                    .font(.system(size: 7, weight: .medium))
+                    .foregroundStyle(DS.Color.statusIdle.opacity(0.7))
+                    .frame(width: 9, height: 9)
             case .idle, .interrupted:
                 Circle()
                     .fill(DS.Color.statusIdle.opacity(0.6))
@@ -304,6 +309,10 @@ struct SessionTab: View {
 
             Button(L10n.shared.renameTab) {
                 startRename()
+            }
+
+            Button(session.isSleeping ? L10n.shared.wakeTab : L10n.shared.sleepTab) {
+                SessionStore.shared.toggleSleep(session.id)
             }
 
             Button(L10n.shared.restart) {

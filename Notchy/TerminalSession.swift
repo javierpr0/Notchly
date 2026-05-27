@@ -11,6 +11,9 @@ enum TerminalStatus: Equatable {
     case interrupted
     /// Claude finished a task (confirmed via idle timer line after working)
     case taskCompleted
+    /// Tab is sleeping — terminal process is killed to free resources.
+    /// Selecting the tab wakes it (re-spawns the shell).
+    case sleeping
 }
 
 struct TerminalSession: Identifiable {
@@ -30,8 +33,15 @@ struct TerminalSession: Identifiable {
     var paneStatuses: [UUID: TerminalStatus] = [:]
     var paneWorkingStartedAt: [UUID: Date] = [:]
 
+    /// When true, the tab's terminal processes are killed to free resources.
+    /// The pane tree and working directories are preserved so the tab can be
+    /// woken later. While sleeping, no terminal view is mounted and no status
+    /// detection runs.
+    var isSleeping: Bool = false
+
     /// Aggregate status across all panes
     var terminalStatus: TerminalStatus {
+        if isSleeping { return .sleeping }
         let statuses = Array(paneStatuses.values)
         if statuses.isEmpty { return .idle }
         if statuses.contains(.working) { return .working }
@@ -71,6 +81,7 @@ struct TerminalSession: Identifiable {
         self.generation = 0
         self.hasBeenSelected = false
         self.createdAt = Date()
+        self.isSleeping = persisted.isSleeping ?? false
 
         if let root = persisted.splitRoot {
             self.splitRoot = root
@@ -84,7 +95,8 @@ struct TerminalSession: Identifiable {
     }
 }
 
-/// Lightweight Codable representation for UserDefaults persistence
+/// Lightweight Codable representation for UserDefaults persistence.
+/// New fields must be optional so decoding old payloads keeps working.
 struct PersistedSession: Codable {
     let id: UUID
     let projectName: String
@@ -92,4 +104,5 @@ struct PersistedSession: Codable {
     let workingDirectory: String
     let splitRoot: SplitNode?
     let focusedPaneId: UUID?
+    let isSleeping: Bool?
 }

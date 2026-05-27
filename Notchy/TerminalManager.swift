@@ -300,21 +300,46 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         let recentLines: ArraySlice<String>
     }
 
+    /// Status detection only inspects content near the bottom of the buffer
+    /// (Claude's status line, prompt separator, "Esc to cancel"). Scanning the
+    /// full terminal every 150ms wastes O(rows × cols) work during heavy output.
+    private static let statusScanRows = 40
+
     private func extractStatusSnapshot() -> StatusSnapshot? {
-        guard let allLines = extractAllLines() else { return nil }
+        guard let tailLines = extractTailLines(maxRows: Self.statusScanRows) else { return nil }
         let separator = "────────"
         let aboveSeparator: [String]
-        if let idx = allLines.lastIndex(where: { $0.contains(separator) }) {
-            aboveSeparator = Array(allLines.prefix(idx))
+        if let idx = tailLines.lastIndex(where: { $0.contains(separator) }) {
+            aboveSeparator = Array(tailLines.prefix(idx))
         } else {
-            aboveSeparator = allLines
+            aboveSeparator = tailLines
         }
         let visible = relevantText(from: aboveSeparator)
-        let full = relevantText(from: allLines)
-        // detectError only ever needs to look at the last 25 rows — older
-        // output was already classified on previous ticks.
-        let recent = allLines.suffix(25)
+        let full = relevantText(from: tailLines)
+        // detectError only ever needs to look at the last 25 rows.
+        let recent = tailLines.suffix(25)
         return StatusSnapshot(visibleText: visible, fullText: full, recentLines: recent)
+    }
+
+    /// Reads only the last `maxRows` rows from the terminal buffer. Cheaper
+    /// than `extractAllLines` for status detection, which doesn't care about
+    /// scrolled-off output.
+    private func extractTailLines(maxRows: Int) -> [String]? {
+        let terminal = getTerminal()
+        guard terminal.rows >= 20 else { return nil }
+        let start = max(0, terminal.rows - maxRows)
+        var lineTexts: [String] = []
+        lineTexts.reserveCapacity(terminal.rows - start)
+        for row in start..<terminal.rows {
+            var line = ""
+            line.reserveCapacity(terminal.cols)
+            for col in 0..<terminal.cols {
+                let ch = terminal.getCharacter(col: col, row: row) ?? " "
+                line.append(ch == "\u{0}" ? " " : ch)
+            }
+            lineTexts.append(line)
+        }
+        return lineTexts
     }
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
@@ -1285,6 +1310,12 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
     }
 
     func destroyTerminal(for sessionId: UUID) {
+        if let terminal = terminals[sessionId] {
+            // Detach the view from any superview so SwiftTerm's process delegate
+            // tears down the PTY. Without this the shell process keeps running
+            // until the view is later released by the SwiftUI host.
+            terminal.removeFromSuperview()
+        }
         terminals.removeValue(forKey: sessionId)
         Task { @MainActor in
             SessionStore.shared.paneCompletionInfo.removeValue(forKey: sessionId)

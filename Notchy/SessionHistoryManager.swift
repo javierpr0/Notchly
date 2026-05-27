@@ -14,6 +14,20 @@ class SessionHistoryManager {
     private let keepSize = 3 * 1024 * 1024
     private static let maxOpenHandles = 8
 
+    /// Coalesced write batching: under heavy terminal output (compiles, npm,
+    /// git log) `appendText` is called hundreds of times per second. Issuing
+    /// one seek+write per chunk back-pressures the dispatch queue. We buffer
+    /// bytes per session and flush either on a short debounce or when the
+    /// buffer exceeds `flushBytesThreshold`, whichever comes first.
+    private static let flushInterval: DispatchTimeInterval = .milliseconds(250)
+    private static let flushBytesThreshold = 32 * 1024
+
+    private struct PendingWrite {
+        var data: Data
+        var timer: DispatchSourceTimer?
+    }
+    private var pendingWrites: [UUID: PendingWrite] = [:]
+
     /// Long-lived FileHandles keyed by sessionId. Reusing the handle avoids
     /// open/seek/close per chunk during streaming output. Bounded with a
     /// simple FIFO eviction.
@@ -46,25 +60,52 @@ class SessionHistoryManager {
     }
 
     func appendText(_ text: String, for sessionId: UUID) {
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty, let data = text.data(using: .utf8) else { return }
         queue.async { [self] in
-            let path = logPath(for: sessionId)
-            guard let data = text.data(using: .utf8) else { return }
-            let handle = handle(for: sessionId, path: path)
-            handle?.seekToEndOfFile()
-            handle?.write(data)
-            // History contains raw terminal output (which can include API
-            // tokens, prompts, file contents). Force 0o600 so other local
-            // users on the machine cannot read it.
-            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
-            rotateIfNeeded(at: path, sessionId: sessionId)
+            if var pending = pendingWrites[sessionId] {
+                pending.data.append(data)
+                pendingWrites[sessionId] = pending
+                if pending.data.count >= Self.flushBytesThreshold {
+                    flushPending(for: sessionId)
+                }
+            } else {
+                let timer = DispatchSource.makeTimerSource(queue: queue)
+                timer.schedule(deadline: .now() + Self.flushInterval)
+                timer.setEventHandler { [weak self] in
+                    self?.flushPending(for: sessionId)
+                }
+                timer.resume()
+                pendingWrites[sessionId] = PendingWrite(data: data, timer: timer)
+                if data.count >= Self.flushBytesThreshold {
+                    flushPending(for: sessionId)
+                }
+            }
         }
+    }
+
+    /// MUST be called on `queue`. Drains the pending buffer for a session
+    /// (seek-to-end + one write + chmod + rotate check). Safe to call when
+    /// nothing is pending.
+    private func flushPending(for sessionId: UUID) {
+        guard let pending = pendingWrites.removeValue(forKey: sessionId) else { return }
+        pending.timer?.cancel()
+        guard !pending.data.isEmpty else { return }
+        let path = logPath(for: sessionId)
+        let handle = handle(for: sessionId, path: path)
+        handle?.seekToEndOfFile()
+        handle?.write(pending.data)
+        // History contains raw terminal output (which can include API tokens,
+        // prompts, file contents). Force 0o600 so other local users on the
+        // machine cannot read it.
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
+        rotateIfNeeded(at: path, sessionId: sessionId)
     }
 
     func readHistory(for sessionId: UUID) -> String {
         let path = logPath(for: sessionId)
         // Flush any buffered writes so reads see the latest data.
         queue.sync { [self] in
+            flushPending(for: sessionId)
             openHandles[sessionId]?.synchronizeFile()
         }
         let raw = (try? String(contentsOf: path, encoding: .utf8)) ?? ""
@@ -73,6 +114,9 @@ class SessionHistoryManager {
 
     func deleteHistory(for sessionId: UUID) {
         queue.async { [self] in
+            if let pending = pendingWrites.removeValue(forKey: sessionId) {
+                pending.timer?.cancel()
+            }
             closeHandle(for: sessionId)
             try? FileManager.default.removeItem(at: logPath(for: sessionId))
         }
@@ -80,6 +124,10 @@ class SessionHistoryManager {
 
     @objc private func closeAllHandles() {
         queue.sync { [self] in
+            // Flush any in-flight buffered writes so we don't lose history on quit.
+            for sessionId in Array(pendingWrites.keys) {
+                flushPending(for: sessionId)
+            }
             for handle in openHandles.values {
                 try? handle.close()
             }

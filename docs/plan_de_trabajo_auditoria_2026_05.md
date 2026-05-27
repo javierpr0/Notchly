@@ -49,11 +49,25 @@ Plan de mejora basado en auditoría exhaustiva del codebase (correctness, perfor
 - [ ] **5.5** Diferir setup de `NotchWindow` — pendiente, requiere medir startup primero
 - [x] **5.6** Git via `PATH` env — `CheckpointManager.gitPath` ahora recorre `$PATH` primero, fallbacks después
 
+## Fase 6 — Feature: Sleep Tabs + Perf adicional
+
+- [x] **6.1** `TerminalStatus.sleeping` + `TerminalSession.isSleeping` + `PersistedSession.isSleeping?` (back-compat)
+- [x] **6.2** `SessionStore.sleepSession`/`wakeSession`/`toggleSleep` — mata procesos por pane, conserva splitRoot/workingDirectory, fuerza hasStarted=false para re-spawn limpio
+- [x] **6.3** `selectSession` auto-wake si tab está dormida
+- [x] **6.4** `updateTerminalStatus` ignora updates de panes huérfanos en sesión durmiendo (race con teardown)
+- [x] **6.5** `TerminalManager.destroyTerminal` ahora hace `removeFromSuperview` → cierra PTY inmediato
+- [x] **6.6** Context menu entry "Dormir/Despertar pestaña" en `SessionTabBar`
+- [x] **6.7** Status indicator: ícono `moon.fill` para sleeping
+- [x] **6.8** `notchStatusColor` retorna `.systemGray` para sleeping
+- [x] **6.9** Localización ES/EN (`sleepTab`, `wakeTab`)
+- [x] **6.10** SessionHistoryManager batching — buffer en memoria por sesión, flush en debounce 250ms o backpressure 32KB; drain en quit/readHistory/deleteHistory
+- [x] **6.11** `extractStatusSnapshot` tail-only — solo últimas 40 filas en lugar de full buffer (~60% menos lecturas por tick de status durante output pesado)
+
 ## Resumen ejecución
 
 **Build verificado**: `xcodebuild ... BUILD SUCCEEDED` tras todos los cambios.
 
-**Items completados**: 14
+**Items completados**: 25
 **Items descartados (falsos positivos / ya hechos)**: 8
 **Items pendientes (refactor mayor o cosmético)**: 4
 

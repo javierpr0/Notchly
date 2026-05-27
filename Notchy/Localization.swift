@@ -102,6 +102,8 @@ final class L10n {
     var restart: String { isSpanish ? "Reiniciar" : "Restart" }
     var close: String { isSpanish ? "Cerrar" : "Close" }
     var restore: String { isSpanish ? "Restaurar" : "Restore" }
+    var sleepTab: String { isSpanish ? "Dormir pestaña" : "Sleep Tab" }
+    var wakeTab: String { isSpanish ? "Despertar pestaña" : "Wake Tab" }
 
     // MARK: - Split Pane
 

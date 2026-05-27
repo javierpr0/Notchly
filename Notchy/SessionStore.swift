@@ -64,6 +64,7 @@ class SessionStore {
         switch session.terminalStatus {
         case .waitingForInput: return .systemRed
         case .working: return .systemYellow
+        case .sleeping: return .systemGray
         case .idle, .interrupted, .taskCompleted: return .systemGreen
         }
     }
@@ -153,7 +154,8 @@ class SessionStore {
             PersistedSession(
                 id: $0.id, projectName: $0.projectName, projectPath: $0.projectPath,
                 workingDirectory: $0.workingDirectory,
-                splitRoot: $0.splitRoot, focusedPaneId: $0.focusedPaneId
+                splitRoot: $0.splitRoot, focusedPaneId: $0.focusedPaneId,
+                isSleeping: $0.isSleeping ? true : nil
             )
         }
         do {
@@ -180,10 +182,14 @@ class SessionStore {
         persistSessions()
     }
 
-    /// Select a tab — auto-starts the terminal and clears taskCompleted indicators
+    /// Select a tab — auto-starts the terminal and clears taskCompleted indicators.
+    /// If the tab is sleeping, selecting it wakes it (terminal will respawn).
     func selectSession(_ id: UUID) {
         activeSessionId = id
         if let index = sessions.firstIndex(where: { $0.id == id }) {
+            if sessions[index].isSleeping {
+                sessions[index].isSleeping = false
+            }
             sessions[index].hasBeenSelected = true
             startSessionIfNeeded(id)
 
@@ -256,6 +262,9 @@ class SessionStore {
 
     func updateTerminalStatus(_ paneId: UUID, status: TerminalStatus) {
         guard let index = sessions.firstIndex(where: { $0.splitRoot.containsPane(paneId) }) else { return }
+        // A sleeping session has no live terminals; any in-flight status callback
+        // from a torn-down terminal must not resurrect paneStatuses.
+        guard !sessions[index].isSleeping else { return }
 
         let oldPaneStatus = sessions[index].paneStatuses[paneId] ?? .idle
         guard oldPaneStatus != status else { return }
@@ -453,6 +462,57 @@ class SessionStore {
         sessions[index].paneStatuses.removeAll()
         sessions[index].paneWorkingStartedAt.removeAll()
         sessions[index].generation += 1
+    }
+
+    /// Puts a session to sleep: kills all of its pane shells, frees the terminal
+    /// views, and marks the session as sleeping. The pane tree and working
+    /// directories are preserved so `wakeSession` can spawn fresh shells in the
+    /// same layout. While sleeping, the session contributes no aggregate status.
+    func sleepSession(_ id: UUID) {
+        guard let index = sessions.firstIndex(where: { $0.id == id }),
+              !sessions[index].isSleeping else { return }
+
+        for paneId in sessions[index].splitRoot.allPaneIds {
+            TerminalManager.shared.destroyTerminal(for: paneId)
+        }
+        sessions[index].paneStatuses.removeAll()
+        sessions[index].paneWorkingStartedAt.removeAll()
+        sessions[index].isSleeping = true
+        // hasStarted=false forces TerminalSessionView to re-spawn on next render.
+        sessions[index].hasStarted = false
+        sessions[index].generation += 1
+
+        // If the active tab was just put to sleep, fall through to a non-sleeping
+        // sibling so the panel doesn't show an empty area waiting for a render.
+        if activeSessionId == id, let next = sessions.first(where: { !$0.isSleeping && $0.id != id }) {
+            activeSessionId = next.id
+        }
+
+        updateSleepPrevention()
+        NotificationCenter.default.post(name: .NotchyNotchStatusChanged, object: nil)
+        persistSessions()
+    }
+
+    /// Wakes a sleeping session. The terminal will spawn lazily when the session
+    /// becomes active and the SwiftUI view renders.
+    func wakeSession(_ id: UUID) {
+        guard let index = sessions.firstIndex(where: { $0.id == id }),
+              sessions[index].isSleeping else { return }
+        sessions[index].isSleeping = false
+        // Don't auto-set hasStarted here — let the selection path do it so the
+        // terminal view actually mounts on the same runloop tick.
+        NotificationCenter.default.post(name: .NotchyNotchStatusChanged, object: nil)
+        persistSessions()
+    }
+
+    func toggleSleep(_ id: UUID) {
+        guard let session = sessions.first(where: { $0.id == id }) else { return }
+        if session.isSleeping {
+            wakeSession(id)
+            selectSession(id)
+        } else {
+            sleepSession(id)
+        }
     }
 
     func closeSession(_ id: UUID) {

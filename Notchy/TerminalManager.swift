@@ -1067,20 +1067,41 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         UserDefaults.standard.string(forKey: Self.fontNameKey)
     }
 
+    /// Cache resolved NSFonts. NSFontDescriptor + NSFontManager lookups are not
+    /// free, and `terminal(for:)` asks for the font 2–3 times per spawn (init,
+    /// resolve-default-family, etc). Re-spawning a fresh terminal hit the font
+    /// path repeatedly — cache by (name, size) so the second spawn pays nothing.
+    private var fontCache: [String: NSFont] = [:]
+
+    private func fontCacheKey(name: String, size: CGFloat) -> String {
+        "\(name)|\(size)"
+    }
+
     /// Resolve the user's chosen font. If the user hasn't picked one
     /// explicitly, prefer Google Sans Mono / Google Sans Code (when
     /// installed), then fall back to the system monospaced font.
     func currentFont(size: CGFloat) -> NSFont {
-        if let name = fontName, !name.isEmpty,
-           let font = Self.resolveFont(name: name, size: size) {
-            return font
+        let chosen = (fontName?.isEmpty == false) ? fontName! : ""
+        let key = fontCacheKey(name: chosen, size: size)
+        if let cached = fontCache[key] { return cached }
+
+        let resolved: NSFont
+        if !chosen.isEmpty, let font = Self.resolveFont(name: chosen, size: size) {
+            resolved = font
+        } else if let candidate = Self.preferredDefaultFontFamilies
+            .lazy.compactMap({ Self.resolveFont(name: $0, size: size) }).first {
+            resolved = candidate
+        } else {
+            resolved = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
         }
-        for candidate in Self.preferredDefaultFontFamilies {
-            if let font = Self.resolveFont(name: candidate, size: size) {
-                return font
-            }
-        }
-        return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        fontCache[key] = resolved
+        return resolved
+    }
+
+    /// Invalidate font cache when the user changes the chosen font or sizes
+    /// the terminal up/down. Called from the font/size mutators below.
+    private func invalidateFontCache() {
+        fontCache.removeAll(keepingCapacity: true)
     }
 
     /// Try a family name first (works for any installed weight) and fall
@@ -1135,20 +1156,22 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
 
     private(set) var terminals: [UUID: LocalProcessTerminalView] = [:]
 
+    /// A pre-spawned terminal sitting at the user's default shell prompt in
+    /// $HOME. When the user opens a new tab whose `.notchy.json` does not
+    /// override the shell, we hand off this warm terminal and just send
+    /// `cd <dir> && clear …` — skipping the ~100–500 ms fork + exec + shell
+    /// startup. A fresh warm is queued after each claim so consecutive opens
+    /// stay fast.
+    private var warmTerminal: ClickThroughTerminalView?
+    /// Coalesces multiple `prepareWarmTerminal()` requests issued in the same
+    /// runloop tick (e.g. after a burst of session restores) so we don't spawn
+    /// extra shells.
+    private var warmSpawnScheduled = false
+
     func terminal(for sessionId: UUID, workingDirectory: String, launchClaude: Bool = true, customCommand: String? = nil) -> LocalProcessTerminalView {
         if let existing = terminals[sessionId] {
             return existing
         }
-
-        let terminal = ClickThroughTerminalView(frame: NSRect(x: 0, y: 0, width: 720, height: 460))
-        terminal.sessionId = sessionId
-        terminal.processDelegate = self
-        terminal.setWorkingDirectory(workingDirectory)
-        terminal.optionAsMetaKey = false
-        terminal.terminal.changeScrollback(10_000)
-
-        terminal.font = currentFont(size: fontSize)
-        applyTheme(to: terminal)
 
         // Trust gate first: a `.notchy.json` from an untrusted project produces
         // a nil config (the user is prompted modally on the main thread).
@@ -1161,6 +1184,30 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
             rawConfig = nil
         }
         let config = sanitizeConfig(rawConfig)
+
+        // Try the warm path: only valid when the project doesn't request a
+        // different shell. Custom commands and CLAUDE.md auto-launch are
+        // post-send so they still work over a warm shell.
+        if config?.shell == nil, let warm = claimWarmTerminal(
+            for: sessionId,
+            workingDirectory: workingDirectory,
+            launchClaude: launchClaude,
+            customCommand: customCommand,
+            configCommand: config?.command,
+            env: config?.env
+        ) {
+            return warm
+        }
+
+        let terminal = ClickThroughTerminalView(frame: NSRect(x: 0, y: 0, width: 720, height: 460))
+        terminal.sessionId = sessionId
+        terminal.processDelegate = self
+        terminal.setWorkingDirectory(workingDirectory)
+        terminal.optionAsMetaKey = false
+        terminal.terminal.changeScrollback(10_000)
+
+        terminal.font = currentFont(size: fontSize)
+        applyTheme(to: terminal)
         let shell = config?.shell ?? ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let environment = buildEnvironment(extra: config?.env)
 
@@ -1190,7 +1237,119 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         }
 
         terminals[sessionId] = terminal
+        prepareWarmTerminal()
         return terminal
+    }
+
+    // MARK: - Warm terminal pool
+
+    /// Sends the same post-startProcess command sequence used by the cold-spawn
+    /// path so a claimed warm terminal lands in exactly the same state.
+    private func sendPostSpawnCommand(
+        to terminal: ClickThroughTerminalView,
+        workingDirectory: String,
+        launchClaude: Bool,
+        customCommand: String?,
+        configCommand: String?
+    ) {
+        let escapedDir = shellEscape(workingDirectory)
+        if let cmd = customCommand {
+            terminal.send(txt: "cd \(escapedDir) && clear && \(cmd)\r")
+        } else if let cmd = configCommand {
+            terminal.send(txt: "cd \(escapedDir) && clear && \(cmd)\r")
+        } else {
+            let hasClaude = launchClaude && FileManager.default.fileExists(atPath: (workingDirectory as NSString).appendingPathComponent("CLAUDE.md"))
+            if hasClaude {
+                terminal.send(txt: "cd \(escapedDir) && clear && claude\r")
+            } else {
+                terminal.send(txt: "cd \(escapedDir) && clear\r")
+            }
+        }
+    }
+
+    /// If a warm terminal exists and the caller didn't request env overrides we
+    /// can't apply post-startProcess, hand it off. Returns nil to let the caller
+    /// fall back to a fresh spawn.
+    private func claimWarmTerminal(
+        for sessionId: UUID,
+        workingDirectory: String,
+        launchClaude: Bool,
+        customCommand: String?,
+        configCommand: String?,
+        env: [String: String]?
+    ) -> LocalProcessTerminalView? {
+        // .notchy.json `env` values can't be injected into an already-running
+        // shell after the fact — environment is established at process exec.
+        // Skip the warm path in that case so the user actually gets their env.
+        guard env == nil || env?.isEmpty == true else { return nil }
+        guard let warm = warmTerminal else { return nil }
+        warmTerminal = nil
+
+        warm.sessionId = sessionId
+        warm.processDelegate = self
+        warm.setWorkingDirectory(workingDirectory)
+        // Font/theme may have changed since this terminal was warmed up.
+        warm.font = currentFont(size: fontSize)
+        applyTheme(to: warm)
+
+        // The warm terminal is still hidden from a previous `isInitializing`
+        // run; reset the counter so the cd+clear from this claim reveals it.
+        warm.alphaValue = 0
+        warm.isInitializing = true
+
+        sendPostSpawnCommand(
+            to: warm,
+            workingDirectory: workingDirectory,
+            launchClaude: launchClaude,
+            customCommand: customCommand,
+            configCommand: configCommand
+        )
+
+        terminals[sessionId] = warm
+        // Re-arm the pool for the next open.
+        prepareWarmTerminal()
+        return warm
+    }
+
+    /// Spawn a single idle terminal in $HOME with the default shell so the
+    /// next `terminal(for:)` call that doesn't need a custom shell can skip
+    /// the fork + exec cost. No-op if a warm terminal already exists.
+    func prepareWarmTerminal() {
+        guard warmTerminal == nil, !warmSpawnScheduled else { return }
+        warmSpawnScheduled = true
+        // Defer slightly so we don't compete with the foreground spawn that
+        // just happened for CPU and main-thread time. 250 ms is long enough
+        // for the visible terminal to finish initialization but short enough
+        // that a rapid second open still benefits.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self else { return }
+            self.warmSpawnScheduled = false
+            guard self.warmTerminal == nil else { return }
+            self.spawnWarmTerminalNow()
+        }
+    }
+
+    private func spawnWarmTerminalNow() {
+        let home = NSHomeDirectory()
+        let terminal = ClickThroughTerminalView(frame: NSRect(x: 0, y: 0, width: 720, height: 460))
+        terminal.processDelegate = self
+        terminal.setWorkingDirectory(home)
+        terminal.optionAsMetaKey = false
+        terminal.terminal.changeScrollback(10_000)
+        terminal.font = currentFont(size: fontSize)
+        applyTheme(to: terminal)
+
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let environment = buildEnvironment()
+        terminal.startProcess(
+            executable: shell,
+            args: ["--login"],
+            environment: environment,
+            execName: "-" + (shell as NSString).lastPathComponent
+        )
+        terminal.alphaValue = 0
+        terminal.isInitializing = true
+        warmTerminal = terminal
     }
 
     // MARK: - LocalProcessTerminalViewDelegate
@@ -1293,6 +1452,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
     private func setFontSize(_ size: CGFloat) {
         let clamped = max(Self.minFontSize, min(Self.maxFontSize, size))
         UserDefaults.standard.set(Double(clamped), forKey: Self.fontSizeKey)
+        invalidateFontCache()
         let font = currentFont(size: clamped)
         for terminal in terminals.values {
             terminal.font = font
@@ -1307,6 +1467,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         } else {
             UserDefaults.standard.removeObject(forKey: Self.fontNameKey)
         }
+        invalidateFontCache()
         let font = currentFont(size: fontSize)
         for terminal in terminals.values {
             terminal.font = font

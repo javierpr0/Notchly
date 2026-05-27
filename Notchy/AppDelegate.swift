@@ -50,6 +50,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         observeUpdaterWindows()
         FullDiskAccessChecker.promptIfNeeded()
 
+        // Spawn one idle shell in the background so the user's next "+" tab
+        // (or the next session selection that needs a fresh terminal) skips
+        // the ~100–500ms fork + exec + shell-startup cost.
+        TerminalManager.shared.prepareWarmTerminal()
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleCheckForUpdates),

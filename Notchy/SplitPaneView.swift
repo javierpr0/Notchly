@@ -1,53 +1,121 @@
 import SwiftUI
 import AppKit
 
+/// Native AppKit divider for split panes. Owns its own mouse handling
+/// instead of relying on a SwiftUI `DragGesture` because the gesture
+/// competes (and frequently loses) against adjacent NSViewRepresentable
+/// terminals that set `acceptsFirstMouse = true`. Cursor handling uses
+/// a tracking area so it survives SwiftUI layout updates that don't
+/// re-invalidate cursor rects.
 class ResizeCursorNSView: NSView {
     var isHorizontal = true
+    /// Fires on mouseDown so the caller can snapshot the starting ratio.
+    var onDragBegan: (() -> Void)?
+    /// Caller of `onDragChanged` receives the signed delta in points along the
+    /// resize axis (horizontal divider → x; vertical → y) since drag start.
+    var onDragChanged: ((CGFloat) -> Void)?
+    var onDragEnded: (() -> Void)?
+    var onHoverChanged: ((Bool) -> Void)?
+
+    private var trackingArea: NSTrackingArea?
+    private var dragStartLocation: NSPoint?
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+    }
+
+    required init?(coder: NSCoder) { super.init(coder: coder) }
 
     override var intrinsicContentSize: NSSize {
-        // Expand fully in the non-constrained axis
-        isHorizontal ? NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
-                     : NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
-    }
-
-    override func resetCursorRects() {
-        discardCursorRects()
-        guard bounds.width > 0 && bounds.height > 0 else { return }
-        let cursor: NSCursor = isHorizontal ? .resizeLeftRight : .resizeUpDown
-        addCursorRect(bounds, cursor: cursor)
-    }
-
-    override func layout() {
-        super.layout()
-        window?.invalidateCursorRects(for: self)
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        window?.invalidateCursorRects(for: self)
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        window?.invalidateCursorRects(for: self)
+        NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let area = trackingArea {
+            removeTrackingArea(area)
+        }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .mouseEnteredAndExited, .cursorUpdate, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    private var resizeCursor: NSCursor {
+        isHorizontal ? .resizeLeftRight : .resizeUpDown
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        resizeCursor.set()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        resizeCursor.set()
+        onHoverChanged?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        // Only revert hover if not currently dragging — drag keeps hover state.
+        if dragStartLocation == nil {
+            onHoverChanged?(false)
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        dragStartLocation = event.locationInWindow
+        onDragBegan?()
+        resizeCursor.set()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let start = dragStartLocation else { return }
+        let current = event.locationInWindow
+        let delta = isHorizontal ? (current.x - start.x) : (current.y - start.y)
+        onDragChanged?(delta)
+        resizeCursor.set()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragStartLocation = nil
+        onDragEnded?()
+        // Only clear hover if mouse actually left the divider bounds.
+        let local = convert(event.locationInWindow, from: nil)
+        if !bounds.contains(local) {
+            onHoverChanged?(false)
+        }
+    }
 }
 
 struct ResizeCursorView: NSViewRepresentable {
     var isHorizontal: Bool
+    var onDragBegan: () -> Void
+    var onDragChanged: (CGFloat) -> Void
+    var onDragEnded: () -> Void
+    var onHoverChanged: (Bool) -> Void
 
     func makeNSView(context: Context) -> ResizeCursorNSView {
         let view = ResizeCursorNSView()
         view.isHorizontal = isHorizontal
         view.translatesAutoresizingMaskIntoConstraints = false
+        view.onDragBegan = onDragBegan
+        view.onDragChanged = onDragChanged
+        view.onDragEnded = onDragEnded
+        view.onHoverChanged = onHoverChanged
         return view
     }
 
     func updateNSView(_ nsView: ResizeCursorNSView, context: Context) {
         nsView.isHorizontal = isHorizontal
-        nsView.window?.invalidateCursorRects(for: nsView)
+        nsView.onDragBegan = onDragBegan
+        nsView.onDragChanged = onDragChanged
+        nsView.onDragEnded = onDragEnded
+        nsView.onHoverChanged = onHoverChanged
     }
 }
 
@@ -60,6 +128,8 @@ struct SplitDividerView<First: View, Second: View>: View {
     @ViewBuilder let second: () -> Second
 
     @State private var isDragging = false
+    @State private var isHovering = false
+    @State private var dragStartRatio: CGFloat = 0
     private let dividerThickness: CGFloat = 7
 
     var body: some View {
@@ -85,31 +155,39 @@ struct SplitDividerView<First: View, Second: View>: View {
     }
 
     private func dividerHandle(total: CGFloat, isHorizontal: Bool) -> some View {
-        ResizeCursorView(isHorizontal: isHorizontal)
-            .frame(
-                width: isHorizontal ? dividerThickness : nil,
-                height: isHorizontal ? nil : dividerThickness
-            )
-            .background(isDragging ? DS.Color.accent.opacity(0.65) : DS.Color.borderHairline)
-            .gesture(
-                DragGesture(minimumDistance: 1)
-                    .onChanged { value in
-                        isDragging = true
-                        let delta = isHorizontal ? value.translation.width : value.translation.height
-                        let newRatio = ratio + delta / total
-                        sessionStore.updateSplitRatio(splitId, ratio: newRatio)
-                    }
-                    .onEnded { _ in
-                        isDragging = false
-                        sessionStore.persistSplitRatio()
-                        // Restore terminal firstResponder after the drag gesture
-                        // releases. Without this the terminal stays "deaf" until
-                        // the user clicks back into it.
-                        if let paneId = sessionStore.activeSession?.focusedPaneId {
-                            TerminalManager.shared.focusTerminal(for: paneId)
-                        }
-                    }
-            )
+        ResizeCursorView(
+            isHorizontal: isHorizontal,
+            onDragBegan: {
+                // Snapshot the ratio at the moment the drag begins. The native
+                // delta is absolute from mouseDown, so we add it to this fixed
+                // anchor instead of the live `ratio` (which itself updates
+                // during the drag and would otherwise compound).
+                dragStartRatio = ratio
+                isDragging = true
+            },
+            onDragChanged: { delta in
+                let newRatio = dragStartRatio + delta / total
+                sessionStore.updateSplitRatio(splitId, ratio: newRatio)
+            },
+            onDragEnded: {
+                isDragging = false
+                sessionStore.persistSplitRatio()
+                if let paneId = sessionStore.activeSession?.focusedPaneId {
+                    TerminalManager.shared.focusTerminal(for: paneId)
+                }
+            },
+            onHoverChanged: { hovering in
+                isHovering = hovering
+            }
+        )
+        .frame(
+            width: isHorizontal ? dividerThickness : nil,
+            height: isHorizontal ? nil : dividerThickness
+        )
+        .background(
+            isDragging ? DS.Color.accent.opacity(0.65)
+            : (isHovering ? DS.Color.accent.opacity(0.25) : DS.Color.borderHairline)
+        )
     }
 }
 

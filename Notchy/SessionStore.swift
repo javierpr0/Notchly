@@ -70,6 +70,9 @@ class SessionStore {
 
     private static let sessionsKey = "persistedSessions"
     private static let activeSessionKey = "activeSessionId"
+    private static let persistDebounceInterval: TimeInterval = 1.5
+
+    private var persistDebounceTask: DispatchWorkItem?
 
     init() {
         restoreSessions()
@@ -97,9 +100,18 @@ class SessionStore {
     // MARK: - Session Persistence
 
     private func restoreSessions() {
-        guard let data = UserDefaults.standard.data(forKey: Self.sessionsKey),
-              let persisted = try? JSONDecoder().decode([PersistedSession].self, from: data),
-              !persisted.isEmpty else { return }
+        guard let data = UserDefaults.standard.data(forKey: Self.sessionsKey) else { return }
+        let persisted: [PersistedSession]
+        do {
+            persisted = try JSONDecoder().decode([PersistedSession].self, from: data)
+        } catch {
+            logger.error("Failed to decode persisted sessions: \(error.localizedDescription, privacy: .public)")
+            // Preserve the corrupt blob so we can inspect it later instead of
+            // silently dropping the user's saved sessions.
+            UserDefaults.standard.set(data, forKey: Self.sessionsKey + ".corrupt")
+            return
+        }
+        guard !persisted.isEmpty else { return }
         sessions = persisted.map { TerminalSession(persisted: $0) }
         if let savedId = UserDefaults.standard.string(forKey: Self.activeSessionKey),
            let uuid = UUID(uuidString: savedId),
@@ -116,10 +128,27 @@ class SessionStore {
     }
 
     func saveSessions() {
-        persistSessions()
+        // Immediate flush — used at app termination, where debounce is unsafe.
+        persistDebounceTask?.cancel()
+        persistDebounceTask = nil
+        persistNow()
     }
 
+    /// Schedules a debounced persistence write. Multiple rapid mutations (drag
+    /// reorder, working-directory updates, status churn) coalesce into one write.
     private func persistSessions() {
+        persistDebounceTask?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in
+                self.persistNow()
+            }
+        }
+        persistDebounceTask = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.persistDebounceInterval, execute: work)
+    }
+
+    private func persistNow() {
         let persisted = sessions.map {
             PersistedSession(
                 id: $0.id, projectName: $0.projectName, projectPath: $0.projectPath,
@@ -127,8 +156,11 @@ class SessionStore {
                 splitRoot: $0.splitRoot, focusedPaneId: $0.focusedPaneId
             )
         }
-        if let data = try? JSONEncoder().encode(persisted) {
+        do {
+            let data = try JSONEncoder().encode(persisted)
             UserDefaults.standard.set(data, forKey: Self.sessionsKey)
+        } catch {
+            logger.error("Failed to encode sessions for persistence: \(error.localizedDescription, privacy: .public)")
         }
         if let activeId = activeSessionId {
             UserDefaults.standard.set(activeId.uuidString, forKey: Self.activeSessionKey)

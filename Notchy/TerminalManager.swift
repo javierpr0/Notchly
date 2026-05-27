@@ -82,6 +82,10 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     }
 
     deinit {
+        statusDebounceTimer?.invalidate()
+        statusDebounceTimer = nil
+        autocompleteDebounceTimer?.invalidate()
+        autocompleteDebounceTimer = nil
         if let monitor = keyMonitor {
             NSEvent.removeMonitor(monitor)
         }
@@ -1107,12 +1111,17 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         terminal.font = currentFont(size: fontSize)
         applyTheme(to: terminal)
 
-        let config: ProjectConfig?
+        // Trust gate first: a `.notchy.json` from an untrusted project produces
+        // a nil config (the user is prompted modally on the main thread).
+        // Defense-in-depth filter then strips dangerous shells/env vars even
+        // for trusted projects.
+        let rawConfig: ProjectConfig?
         if Thread.isMainThread {
-            config = MainActor.assumeIsolated { ProjectTrustStore.loadTrustedConfig(from: workingDirectory) }
+            rawConfig = MainActor.assumeIsolated { ProjectTrustStore.loadTrustedConfig(from: workingDirectory) }
         } else {
-            config = nil
+            rawConfig = nil
         }
+        let config = sanitizeConfig(rawConfig)
         let shell = config?.shell ?? ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
         let environment = buildEnvironment(extra: config?.env)
 
@@ -1288,7 +1297,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         env["LANG"] = env["LANG"] ?? "en_US.UTF-8"
         env["TERM_PROGRAM"] = "Apple_Terminal"
         if let extra {
-            for (key, value) in extra {
+            for (key, value) in extra where Self.isSafeEnvKey(key) {
                 env[key] = value
             }
         }
@@ -1297,6 +1306,58 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
 
     private func shellEscape(_ path: String) -> String {
         "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    // MARK: - .notchy.json security gates
+
+    /// Standard directories where a shell binary is acceptable. A `.notchy.json`
+    /// pointing to anything outside these (e.g. `/tmp/evil`) is rejected.
+    private static let allowedShellDirectories: [String] = [
+        "/bin/", "/usr/bin/", "/usr/local/bin/", "/opt/homebrew/bin/"
+    ]
+
+    /// Env keys that influence process loading or critical paths — never let
+    /// a project config override these.
+    private static let blockedEnvKeys: Set<String> = [
+        "PATH", "SHELL", "HOME", "USER", "LOGNAME", "TMPDIR", "IFS"
+    ]
+    private static let blockedEnvPrefixes: [String] = ["DYLD_", "LD_"]
+
+    private static func isSafeEnvKey(_ key: String) -> Bool {
+        if blockedEnvKeys.contains(key) { return false }
+        if blockedEnvPrefixes.contains(where: { key.hasPrefix($0) }) { return false }
+        return true
+    }
+
+    private static func isAllowedShell(_ path: String) -> Bool {
+        guard !path.contains(".."), !path.contains("\0") else { return false }
+        guard allowedShellDirectories.contains(where: { path.hasPrefix($0) }) else { return false }
+        return FileManager.default.isExecutableFile(atPath: path)
+    }
+
+    /// Defense-in-depth filter applied AFTER `ProjectTrustStore.loadTrustedConfig`
+    /// has gated user trust. Even a trusted project cannot escalate via
+    /// `DYLD_INSERT_LIBRARIES`-style env vars or a shell binary outside the
+    /// standard system directories.
+    private func sanitizeConfig(_ config: ProjectConfig?) -> ProjectConfig? {
+        guard let config else { return nil }
+
+        var safeShell: String? = nil
+        if let proposedShell = config.shell {
+            if Self.isAllowedShell(proposedShell) {
+                safeShell = proposedShell
+            } else {
+                NSLog("Notchly: rejecting .notchy.json shell \(proposedShell) — not in allowed directories")
+            }
+        }
+
+        let filteredEnv = config.env?.filter { Self.isSafeEnvKey($0.key) }
+
+        return ProjectConfig(
+            shell: safeShell,
+            command: config.command,
+            env: filteredEnv
+        )
     }
 
     // MARK: - Theme

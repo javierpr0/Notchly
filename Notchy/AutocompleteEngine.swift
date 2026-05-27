@@ -9,6 +9,18 @@ class AutocompleteEngine {
     static let shared = AutocompleteEngine()
     private let maxSuggestions = 7
 
+    /// Caches lowercased forms of command strings so the per-keystroke loop
+    /// doesn't reallocate them. Bounded by the universe of unique commands
+    /// the user has ever seen (~hundreds), so unbounded growth is not a concern.
+    private var lowercasedCache: [String: String] = [:]
+
+    private func lowercased(_ source: String) -> String {
+        if let cached = lowercasedCache[source] { return cached }
+        let lc = source.lowercased()
+        lowercasedCache[source] = lc
+        return lc
+    }
+
     func suggestions(for input: String, in directory: String) -> [AutocompleteSuggestion] {
         guard input.count >= 2 else { return [] }
 
@@ -23,7 +35,7 @@ class AutocompleteEngine {
             // Skip exact matches
             guard cmd.text != input else { continue }
 
-            let lowercasedCmd = cmd.text.lowercased()
+            let lowercasedCmd = lowercased(cmd.text)
             var score: Double = 0
 
             if lowercasedCmd.hasPrefix(lowercasedInput) {

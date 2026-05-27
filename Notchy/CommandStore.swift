@@ -182,7 +182,13 @@ class CommandStore {
     // MARK: - Private
 
     private func filePath(for directory: String) -> URL {
-        let digest = SHA256.hash(data: Data(directory.utf8))
+        // Canonicalize the directory so equivalent paths (trailing slashes,
+        // relative components, symlinks) hash to the same file, and so a
+        // crafted directory cannot escape the storage folder. The hash itself
+        // is opaque, so the worst a malicious path could do is collide with
+        // another canonical path's bucket — canonicalization removes that risk.
+        let canonical = URL(fileURLWithPath: directory).standardizedFileURL.path
+        let digest = SHA256.hash(data: Data(canonical.utf8))
         let hash = digest.map { String(format: "%02x", $0) }.joined()
         return baseDir.appendingPathComponent("\(hash).json")
     }

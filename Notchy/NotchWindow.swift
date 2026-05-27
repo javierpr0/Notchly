@@ -675,43 +675,57 @@ class CVDisplayLinkWrapper {
     private var displayLink: CVDisplayLink?
     private let callback: () -> Bool  // return true to keep running
     private var stopped = false
+    /// Opaque pointer to the retained `self` reference handed to the CoreVideo
+    /// callback. Kept so `stop()` can balance the retain even when the callback
+    /// is never invoked (e.g. display sleep, external stop before first tick).
+    private var retainedSelfPointer: UnsafeMutableRawPointer?
 
     init(callback: @escaping () -> Bool) {
         self.callback = callback
     }
 
     func start() {
+        guard !stopped else { return }
         CVDisplayLinkCreateWithActiveCGDisplays(&displayLink)
         guard let displayLink else { return }
 
         let opaqueWrapper = Unmanaged.passRetained(self)
+        retainedSelfPointer = opaqueWrapper.toOpaque()
         CVDisplayLinkSetOutputCallback(displayLink, { (_, _, _, _, _, userInfo) -> CVReturn in
             guard let userInfo else { return kCVReturnError }
             let wrapper = Unmanaged<CVDisplayLinkWrapper>.fromOpaque(userInfo).takeUnretainedValue()
             guard !wrapper.stopped else { return kCVReturnSuccess }
             let keepRunning = wrapper.callback()
             if !keepRunning {
-                // Stop immediately on this thread to prevent further callbacks
-                wrapper.stopped = true
-                if let link = wrapper.displayLink {
-                    CVDisplayLinkStop(link)
-                }
-                // Release the retained reference on main
                 DispatchQueue.main.async {
-                    wrapper.displayLink = nil
-                    Unmanaged<CVDisplayLinkWrapper>.fromOpaque(userInfo).release()
+                    wrapper.stop()
                 }
             }
             return kCVReturnSuccess
-        }, opaqueWrapper.toOpaque())
+        }, retainedSelfPointer)
 
         CVDisplayLinkStart(displayLink)
     }
 
     func stop() {
+        guard !stopped else { return }
         stopped = true
-        guard let displayLink else { return }
-        CVDisplayLinkStop(displayLink)
-        self.displayLink = nil
+        if let displayLink {
+            CVDisplayLinkStop(displayLink)
+        }
+        displayLink = nil
+        if let pointer = retainedSelfPointer {
+            retainedSelfPointer = nil
+            Unmanaged<CVDisplayLinkWrapper>.fromOpaque(pointer).release()
+        }
+    }
+
+    deinit {
+        // Safety net: if the wrapper is being deallocated, the retained reference
+        // must have already been released (otherwise we wouldn't be deiniting),
+        // but make absolutely sure the CVDisplayLink is stopped.
+        if let displayLink, !stopped {
+            CVDisplayLinkStop(displayLink)
+        }
     }
 }

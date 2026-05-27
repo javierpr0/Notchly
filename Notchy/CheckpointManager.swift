@@ -38,30 +38,18 @@ class CheckpointManager {
         return f
     }()
 
-    // git ref-name accepts a narrow alphabet; everything outside [A-Za-z0-9._-]
-    // is replaced so an attacker-controlled session name cannot break the ref
-    // hierarchy or the for-each-ref glob filter when listing snapshots.
-    private static func sanitizeProjectName(_ name: String) -> String {
-        var sanitized = String(name.unicodeScalars.map { scalar -> Character in
-            let value = scalar.value
-            let isAlnum = (value >= 0x30 && value <= 0x39)
-                       || (value >= 0x41 && value <= 0x5A)
-                       || (value >= 0x61 && value <= 0x7A)
-            if isAlnum || scalar == "." || scalar == "_" || scalar == "-" {
-                return Character(scalar)
-            }
-            return "_"
-        })
-        // git refs cannot start with '.' or '-' and cannot contain '..'
-        while sanitized.hasPrefix(".") || sanitized.hasPrefix("-") {
-            sanitized.removeFirst()
-        }
-        sanitized = sanitized.replacingOccurrences(of: "..", with: "__")
-        return sanitized.isEmpty ? "project" : sanitized
-    }
-
     private lazy var gitPath: String = {
-        let candidates = ["/usr/bin/git", "/usr/local/bin/git", "/opt/homebrew/bin/git"]
+        // Honor the user's PATH first (e.g. asdf, mise, brew shims, custom installs),
+        // then fall back to common system locations.
+        if let envPath = ProcessInfo.processInfo.environment["PATH"] {
+            for dir in envPath.split(separator: ":").map(String.init) {
+                let candidate = (dir as NSString).appendingPathComponent("git")
+                if FileManager.default.isExecutableFile(atPath: candidate) {
+                    return candidate
+                }
+            }
+        }
+        let candidates = ["/opt/homebrew/bin/git", "/usr/local/bin/git", "/usr/bin/git"]
         for path in candidates {
             if FileManager.default.isExecutableFile(atPath: path) {
                 return path
@@ -105,17 +93,29 @@ class CheckpointManager {
         // Verify this is a git repo
         _ = try git(["rev-parse", "--git-dir"], in: projectDirectory)
 
+        let safeName = Self.sanitizeRefComponent(projectName)
+        guard !safeName.isEmpty else {
+            throw CheckpointError.gitFailed("project name produces an invalid git ref")
+        }
         let timestamp = dateFormatter.string(from: Date())
-        let safeName = Self.sanitizeProjectName(projectName)
         let refName = "\(refPrefix)/\(safeName)/\(timestamp)"
 
-        // Use a temporary index file to avoid disturbing the user's staged changes
-        let tempIndex = NSTemporaryDirectory() + "Notchy-index-\(UUID().uuidString)"
+        // Use a temporary index file to avoid disturbing the user's staged changes.
+        // Wrap the index in a freshly-created, owner-only directory so a stale
+        // file or hostile symlink at the predicted path cannot redirect the write.
+        let tempParent = (NSTemporaryDirectory() as NSString)
+            .appendingPathComponent("Notchy-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            atPath: tempParent,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let tempIndex = (tempParent as NSString).appendingPathComponent("index")
         defer {
             do {
-                try FileManager.default.removeItem(atPath: tempIndex)
+                try FileManager.default.removeItem(atPath: tempParent)
             } catch {
-                logger.warning("Failed to clean up temp index: \(error.localizedDescription)")
+                logger.warning("Failed to clean up temp index dir: \(error.localizedDescription)")
             }
         }
 
@@ -126,11 +126,15 @@ class CheckpointManager {
 
         // Write the tree object from the temp index
         let tree = try git(["write-tree"], in: projectDirectory, environment: env)
-        guard !tree.isEmpty else { throw CheckpointError.gitFailed("write-tree produced no output") }
+        guard Self.isValidGitObjectHash(tree) else {
+            throw CheckpointError.gitFailed("write-tree returned an invalid object hash: \(tree)")
+        }
 
         // Create a detached commit (no parent) holding the tree
         let commit = try git(["commit-tree", tree, "-m", "Notchy checkpoint \(timestamp)"], in: projectDirectory)
-        guard !commit.isEmpty else { throw CheckpointError.gitFailed("commit-tree produced no output") }
+        guard Self.isValidGitObjectHash(commit) else {
+            throw CheckpointError.gitFailed("commit-tree returned an invalid object hash: \(commit)")
+        }
 
         // Store the commit under a custom ref
         try git(["update-ref", refName, commit], in: projectDirectory)
@@ -143,7 +147,8 @@ class CheckpointManager {
 
     /// Lists all checkpoints for a project, newest first
     func checkpoints(for projectName: String, in projectDirectory: String) -> [Checkpoint] {
-        let safeName = Self.sanitizeProjectName(projectName)
+        let safeName = Self.sanitizeRefComponent(projectName)
+        guard !safeName.isEmpty else { return [] }
         let refPattern = "\(refPrefix)/\(safeName)/"
         guard let output = try? git(
             ["for-each-ref", "--format=%(refname) %(objectname:short)", refPattern],
@@ -192,5 +197,41 @@ class CheckpointManager {
                 logger.warning("Failed to delete checkpoint ref \(checkpoint.id): \(error.localizedDescription)")
             }
         }
+    }
+
+    /// Returns true when the string looks like a git object hash (SHA-1 or SHA-256).
+    static func isValidGitObjectHash(_ raw: String) -> Bool {
+        let len = raw.count
+        guard len == 40 || len == 64 else { return false }
+        return raw.allSatisfy { $0.isHexDigit }
+    }
+
+    /// Sanitizes a project name so it is safe to embed in a git ref path.
+    /// Git ref rules: no spaces, no `:`, `~`, `^`, `?`, `*`, `[`, `\\`, `..`, leading/trailing `/` or `.`,
+    /// and components cannot end with `.lock`. We replace anything outside `[A-Za-z0-9._-]` with `_`,
+    /// collapse repeats, and trim leading/trailing dots and underscores.
+    static func sanitizeRefComponent(_ raw: String) -> String {
+        let allowed: Set<Character> = Set(
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+        )
+        var out = ""
+        var lastWasUnderscore = false
+        for ch in raw {
+            if allowed.contains(ch) {
+                out.append(ch)
+                lastWasUnderscore = false
+            } else if !lastWasUnderscore {
+                out.append("_")
+                lastWasUnderscore = true
+            }
+        }
+        // Trim leading/trailing dots, slashes, underscores
+        let trimmed = out.trimmingCharacters(in: CharacterSet(charactersIn: "._/"))
+        // Disallow `..` sequences and the `.lock` suffix
+        let collapsed = trimmed.replacingOccurrences(of: "..", with: "_")
+        if collapsed.hasSuffix(".lock") {
+            return String(collapsed.dropLast(5))
+        }
+        return collapsed
     }
 }

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.1] - 2026-05-28
+
+### Changed
+- Terminal output is now buffered to session history as raw bytes and handed straight to the writer queue, dropping the per-chunk `String` decode + re-encode that ran on the main thread during heavy output.
+
+### Fixed
+- Opening the session history viewer no longer freezes the app on a large log. The flush, the up-to-5 MB file read, and the ANSI-stripping regex passes now run off the main thread and fill the window asynchronously instead of blocking the UI on `queue.sync` + a synchronous read.
+- Session history no longer silently drops output whose UTF-8 split across a read boundary — chunks were decoded with `String(bytes:encoding:)`, which returns nil (and discarded the whole chunk) when a multi-byte sequence straddled two reads.
+- Opening a tab no longer stalls the UI while it checks for `CLAUDE.md`. The probe ran as a synchronous `fileExists` on the main thread on every spawn; it now runs off-main, so a working directory on a slow or unresponsive volume (asleep external drive, wedged network mount) can't freeze tab open.
+- Per-directory autocomplete commands are no longer lost on restart. Saved files were written with ISO-8601 dates but read back with the default `JSONDecoder`, so every cold load threw and returned an empty list — the in-memory cache masked it until the next launch.
+
 ## [0.23.0] - 2026-05-27
 
 ### Added
@@ -218,7 +229,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global backtick hotkey to toggle panel
 - Pin panel open option
 
-[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.23.1...HEAD
+[0.23.1]: https://github.com/javierpr0/notchly/compare/v0.23.0...v0.23.1
 [0.23.0]: https://github.com/javierpr0/notchly/compare/v0.22.5...v0.23.0
 [0.20.0]: https://github.com/javierpr0/notchly/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/javierpr0/notchly/compare/v0.18.0...v0.19.0

@@ -15,6 +15,17 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     var isInitializing = false
     private var dataReceivedCount = 0
 
+    /// Hides the view and re-arms the init gate so the next `cd && clear`
+    /// sequence reveals it cleanly. Must reset `dataReceivedCount` too — a
+    /// warm terminal already pumped its login output past the reveal threshold,
+    /// so without this the claimed terminal reveals before its clear finishes
+    /// and flashes the previous shell's prompt/cwd.
+    func beginInitialization() {
+        alphaValue = 0
+        isInitializing = true
+        dataReceivedCount = 0
+    }
+
     // Autocomplete state
     private var autocompleteDebounceTimer: Timer?
     private var lastPromptInput: String = ""
@@ -261,49 +272,10 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         return false
     }
 
-    /// Returns all visible lines from the terminal buffer.
-    private func extractAllLines() -> [String]? {
-        let terminal = getTerminal()
-        guard terminal.rows >= 20 else { return nil }
-        var lineTexts: [String] = []
-        lineTexts.reserveCapacity(terminal.rows)
-        for row in 0..<terminal.rows {
-            var line = ""
-            line.reserveCapacity(terminal.cols)
-            for col in 0..<terminal.cols {
-                let ch = terminal.getCharacter(col: col, row: row) ?? " "
-                line.append(ch == "\u{0}" ? " " : ch)
-            }
-            lineTexts.append(line)
-        }
-        return lineTexts
-    }
-
     /// Returns the last 20 non-blank lines from the given lines, joined by newlines.
     private func relevantText(from lines: [String]) -> String {
         let nonBlankLines = lines.filter { !$0.allSatisfy({ $0 == " " }) }
         return nonBlankLines.suffix(20).joined(separator: "\n")
-    }
-
-    /// Returns the last 20 non-blank lines of terminal output above the prompt separator.
-    func extractVisibleText() -> String? {
-        guard var lineTexts = extractAllLines() else { return nil }
-
-        // Find the last horizontal rule separator (────...) which divides
-        // Claude's output from the user's current prompt input area.
-        // Only consider text above it so we don't capture the in-progress prompt.
-        let separator = "────────"
-        if let lastSeparatorIndex = lineTexts.lastIndex(where: { $0.contains(separator) }) {
-            lineTexts = Array(lineTexts.prefix(lastSeparatorIndex))
-        }
-
-        return relevantText(from: lineTexts)
-    }
-
-    /// Returns the last 20 non-blank lines of the full terminal output (including prompt area).
-    func extractFullVisibleText() -> String? {
-        guard let lineTexts = extractAllLines() else { return nil }
-        return relevantText(from: lineTexts)
     }
 
     /// Single-pass extraction used by evaluateStatus to avoid scanning the
@@ -335,9 +307,21 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         return StatusSnapshot(visibleText: visible, fullText: full, recentLines: recent)
     }
 
+    /// Reads columns [from, to) of `row` into a String, mapping NUL to space.
+    /// `to` defaults to the full row width.
+    private func readRow(_ row: Int, in terminal: Terminal, from: Int = 0, to: Int? = nil) -> String {
+        let end = to ?? terminal.cols
+        var line = ""
+        line.reserveCapacity(max(0, end - from))
+        for col in from..<end {
+            let ch = terminal.getCharacter(col: col, row: row) ?? " "
+            line.append(ch == "\u{0}" ? " " : ch)
+        }
+        return line
+    }
+
     /// Reads only the last `maxRows` rows from the terminal buffer. Cheaper
-    /// than `extractAllLines` for status detection, which doesn't care about
-    /// scrolled-off output.
+    /// for status detection, which doesn't care about scrolled-off output.
     private func extractTailLines(maxRows: Int) -> [String]? {
         let terminal = getTerminal()
         guard terminal.rows >= 20 else { return nil }
@@ -345,13 +329,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         var lineTexts: [String] = []
         lineTexts.reserveCapacity(terminal.rows - start)
         for row in start..<terminal.rows {
-            var line = ""
-            line.reserveCapacity(terminal.cols)
-            for col in 0..<terminal.cols {
-                let ch = terminal.getCharacter(col: col, row: row) ?? " "
-                line.append(ch == "\u{0}" ? " " : ch)
-            }
-            lineTexts.append(line)
+            lineTexts.append(readRow(row, in: terminal))
         }
         return lineTexts
     }
@@ -463,7 +441,10 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
             if blocked.contains(scalar) { return false }
             // Allow tab and printable; drop other control codes
             if scalar.value < 0x20 && scalar != "\t" { return false }
-            if scalar.value == 0x7F { return false }
+            // DEL + C1 controls (U+007F–U+009F): U+0085 NEL and U+009B CSI are
+            // treated as line/escape introducers by some renderers, so a hostile
+            // program could spoof or break the notification line. Drop the range.
+            if scalar.value >= 0x7F && scalar.value <= 0x9F { return false }
             return true
         }
         return String(String.UnicodeScalarView(scalars))
@@ -486,19 +467,6 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
 
     /// Checks whether the text contains a Claude spinner character (visible during working state)
     private static let spinnerCharacters: Set<Character> = ["·", "✢", "✳", "✶", "✻", "✽"]
-
-    /// Checks for a line like "Idle for 30s" — must contain " for " and end with "s",
-    /// but must NOT contain parentheses (which indicate thinking duration, not true idle).
-    private static func hasIdleForLine(_ text: String) -> Bool {
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-        return lines.contains { line in
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard trimmed.contains(" for ") else { return false }
-            guard trimmed.hasSuffix("s") else { return false }
-            guard !trimmed.contains("(") && !trimmed.contains(")") else { return false }
-            return true
-        }
-    }
 
     private static func hasTokenCounterLine(_ text: String) -> Bool {
         let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
@@ -657,11 +625,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         let cursor = terminal.getCursorLocation()
 
         // Read the cursor row
-        var line = ""
-        for col in 0..<terminal.cols {
-            let ch = terminal.getCharacter(col: col, row: cursor.y) ?? " "
-            line.append(ch == "\u{0}" ? " " : ch)
-        }
+        let line = readRow(cursor.y, in: terminal)
         let trimmedLine = line.trimmingCharacters(in: .whitespaces)
         guard !trimmedLine.isEmpty else { return nil }
 
@@ -684,12 +648,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         let inputStart = pe + 2 // prompt char + space
         guard inputStart < cursor.x else { return nil }
 
-        var input = ""
-        for col in inputStart..<cursor.x {
-            let ch = terminal.getCharacter(col: col, row: cursor.y) ?? " "
-            input.append(ch == "\u{0}" ? " " : ch)
-        }
-
+        let input = readRow(cursor.y, in: terminal, from: inputStart, to: cursor.x)
         let trimmed = input.trimmingCharacters(in: .whitespaces)
         return trimmed.isEmpty ? nil : trimmed
     }
@@ -1219,17 +1178,15 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         )
 
         // Hide terminal until cd && clear finishes (revealed in dataReceived)
-        terminal.alphaValue = 0
-        terminal.isInitializing = true
+        terminal.beginInitialization()
 
-        let escapedDir = shellEscape(workingDirectory)
-        if let cmd = customCommand {
-            terminal.send(txt: "cd \(escapedDir) && clear && \(cmd)\r")
-        } else if let cmd = config?.command {
-            terminal.send(txt: "cd \(escapedDir) && clear && \(cmd)\r")
-        } else {
-            sendClaudeLaunch(to: terminal, escapedDir: escapedDir, workingDirectory: workingDirectory, launchClaude: launchClaude)
-        }
+        sendPostSpawnCommand(
+            to: terminal,
+            workingDirectory: workingDirectory,
+            launchClaude: launchClaude,
+            customCommand: customCommand,
+            configCommand: config?.command
+        )
 
         terminals[sessionId] = terminal
         prepareWarmTerminal()
@@ -1294,6 +1251,14 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         guard let warm = warmTerminal else { return nil }
         warmTerminal = nil
 
+        // Don't hand off a warm terminal whose shell already died (e.g. a login
+        // script that exits). Returning nil falls through to a cold spawn, which
+        // re-arms the pool.
+        guard warm.process?.running == true else {
+            warm.removeFromSuperview()
+            return nil
+        }
+
         warm.sessionId = sessionId
         warm.processDelegate = self
         warm.setWorkingDirectory(workingDirectory)
@@ -1302,9 +1267,8 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         applyTheme(to: warm)
 
         // The warm terminal is still hidden from a previous `isInitializing`
-        // run; reset the counter so the cd+clear from this claim reveals it.
-        warm.alphaValue = 0
-        warm.isInitializing = true
+        // run; reset the gate so the cd+clear from this claim reveals it.
+        warm.beginInitialization()
 
         sendPostSpawnCommand(
             to: warm,
@@ -1356,8 +1320,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
             environment: environment,
             execName: "-" + (shell as NSString).lastPathComponent
         )
-        terminal.alphaValue = 0
-        terminal.isInitializing = true
+        terminal.beginInitialization()
         warmTerminal = terminal
     }
 
@@ -1442,12 +1405,27 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         return names
     }
 
-    func processTerminated(source: TerminalView, exitCode: Int32?) {}
+    func processTerminated(source: TerminalView, exitCode: Int32?) {
+        guard let view = source as? ClickThroughTerminalView else { return }
 
-    /// Returns the visible text from a terminal's buffer
-    func visibleText(for sessionId: UUID) -> String? {
-        guard let terminal = terminals[sessionId] as? ClickThroughTerminalView else { return nil }
-        return terminal.extractVisibleText()
+        // The unclaimed warm terminal's shell died (e.g. a failing login
+        // script). Drop it; the pool re-arms on the next spawn. Don't re-warm
+        // here — a shell that always exits would spin.
+        if view === warmTerminal {
+            warmTerminal = nil
+            view.removeFromSuperview()
+            return
+        }
+
+        // An active pane's shell exited (`exit`, or a crash). Clear the stale
+        // terminal so a later reselect respawns a fresh shell, and reset status
+        // so the tab/notch don't keep showing a frozen spinner. The status write
+        // no-ops for sleeping sessions (guarded in updateTerminalStatus).
+        guard let paneId = view.sessionId else { return }
+        terminals.removeValue(forKey: paneId)
+        Task { @MainActor in
+            SessionStore.shared.updateTerminalStatus(paneId, status: .idle)
+        }
     }
 
     func increaseFontSize() { changeFontSize(by: 1) }

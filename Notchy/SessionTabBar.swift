@@ -200,7 +200,10 @@ struct SessionTab: View {
     }
 
     private func showHistory() {
-        let panel = HistoryViewerPanel(sessionName: session.projectName, sessionId: session.id)
+        // History is logged per pane (terminal.sessionId is a pane id), so read
+        // every pane in this session's split tree, not the session id — that
+        // file never exists and the viewer always showed "No history".
+        let panel = HistoryViewerPanel(sessionName: session.projectName, paneIds: session.splitRoot.allPaneIds)
         panel.makeKeyAndOrderFront(nil)
     }
 
@@ -392,7 +395,11 @@ struct SessionTab: View {
                 if let checkpoint = latestCheckpoint {
                     guard let dir = session.projectPath else { return }
                     let projectDir = (dir as NSString).deletingLastPathComponent
-                    try? CheckpointManager.shared.restoreCheckpoint(checkpoint, to: projectDir)
+                    do {
+                        try CheckpointManager.shared.restoreCheckpoint(checkpoint, to: projectDir)
+                    } catch {
+                        NSLog("Notchly: checkpoint restore failed: \(error.localizedDescription)")
+                    }
                 }
             }
             Button(L10n.shared.cancel, role: .cancel) {}
@@ -413,16 +420,4 @@ struct SessionTab: View {
     }
 }
 
-struct TabSpinnerView: View {
-    @State private var isAnimating = false
-
-    var body: some View {
-        Circle()
-            .trim(from: 0.05, to: 0.8)
-            .stroke(Color(nsColor: SessionStore.shared.currentTheme.chromeForeground), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-            .rotationEffect(.degrees(isAnimating ? 360 : 0))
-            .animation(.linear(duration: 0.8).repeatForever(autoreverses: false), value: isAnimating)
-            .onAppear { isAnimating = true }
-    }
-}
 

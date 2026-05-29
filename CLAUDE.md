@@ -18,7 +18,7 @@ Notchly is a macOS menu bar app that provides a floating terminal panel anchored
 
 ## Architecture
 
-**App lifecycle**: `NotchyApp` (in `BotdockApp.swift`) uses `@NSApplicationDelegateAdaptor` to delegate to `AppDelegate`, which owns the `NSStatusItem` (menu bar icon), the `TerminalPanel`, and the `NotchWindow`. The SwiftUI `App` body is an empty `Settings` scene — all UI lives in the panel and notch window.
+**App lifecycle**: `NotchyApp` (in `NotchyApp.swift`) uses `@NSApplicationDelegateAdaptor` to delegate to `AppDelegate`, which owns the `NSStatusItem` (menu bar icon), the `TerminalPanel`, and the `NotchWindow`. The SwiftUI `App` body is an empty `Settings` scene — all UI lives in the panel and notch window.
 
 **Notch integration**: `NotchWindow` is an always-visible `NSPanel` positioned over the MacBook notch. It detects notch dimensions via `NSScreen.auxiliaryTopLeftArea`/`auxiliaryTopRightArea`, tracks mouse hover to trigger the main panel, and expands with a bounce animation (via `CVDisplayLinkWrapper`) when any session is working. `NotchPillContent` (SwiftUI) renders status icons (spinner, checkmark, warning) inside the pill. `NotchDisplayState` computes a priority-based aggregate status across all sessions.
 
@@ -46,7 +46,7 @@ Notchly is a macOS menu bar app that provides a floating terminal panel anchored
 
 | File | Purpose |
 |------|---------|
-| `BotdockApp.swift` | App entry point (`NotchyApp`) |
+| `NotchyApp.swift` | App entry point (`NotchyApp`) |
 | `AppDelegate.swift` | Menu bar icon, hotkey, hover tracking, panel lifecycle |
 | `TerminalManager.swift` | Terminal creation, `ClickThroughTerminalView`, status detection, autocomplete integration |
 | `TerminalPanel.swift` | Floating panel window, keyboard shortcuts |
@@ -70,4 +70,4 @@ Notchly is a macOS menu bar app that provides a floating terminal panel anchored
 
 ## Entitlements
 
-The app requires `com.apple.security.automation.apple-events` for AppleScript communication with Xcode.
+`Notchy.entitlements` is currently empty (`<dict/>`) — the app is unsandboxed (required: it spawns the user's login shell and runs arbitrary commands) and declares no special entitlements. There is no AppleScript/Xcode-automation code. If Developer-ID signing + notarization is added later, any needed entitlement must be declared explicitly here, since CI currently signs ad-hoc (`CODE_SIGN_IDENTITY="-"`) and the hardened runtime isn't truly enforced.

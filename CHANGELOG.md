@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.2] - 2026-05-29
+
+### Security
+- Notification text now strips C1 control characters (U+0080–U+009F, including NEL and CSI) in addition to C0/DEL, closing a notification-spoofing vector from hostile terminal output.
+
+### Fixed
+- Session history viewer always showed "No history". History is written per pane, but the viewer read a log keyed by the session id (a file that never exists). It now reads and concatenates every pane's log in the session's split tree.
+- Claimed warm-pool terminals briefly flashed the previous shell's `$HOME` prompt because the reveal counter wasn't reset. A claimed terminal now stays hidden until its own `cd && clear` completes.
+- A warm terminal whose shell had already exited could be handed to a new tab. The pool now verifies the process is alive before handoff and falls back to a fresh spawn.
+- A terminal whose shell exited (`exit`, crash, failing login script) left the tab/notch showing a frozen status and leaked the dead terminal. `processTerminated` now clears it and resets status (a later reselect respawns a fresh shell).
+- Restoring a checkpoint no longer fails silently — the error is logged instead of being swallowed by `try?`.
+- "Task completed" notifications were suppressed for many real tasks: the trivial-task filter measured wall time including the 3-second confirmation delay. It now measures actual working duration.
+
+### Changed
+- Sparkle appcast now advertises the correct minimum macOS (26.0). It previously defaulted to 14.0, offering the update to systems that cannot run the app.
+- Internal cleanup: removed dead code and de-duplicated the terminal buffer-reading and launch-command paths (no behavior change).
+
 ## [0.23.1] - 2026-05-28
 
 ### Changed
@@ -229,7 +246,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global backtick hotkey to toggle panel
 - Pin panel open option
 
-[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.23.1...HEAD
+[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.23.2...HEAD
+[0.23.2]: https://github.com/javierpr0/notchly/compare/v0.23.1...v0.23.2
 [0.23.1]: https://github.com/javierpr0/notchly/compare/v0.23.0...v0.23.1
 [0.23.0]: https://github.com/javierpr0/notchly/compare/v0.22.5...v0.23.0
 [0.20.0]: https://github.com/javierpr0/notchly/compare/v0.19.0...v0.20.0

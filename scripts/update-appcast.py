@@ -40,7 +40,7 @@ def main():
     parser.add_argument("--signature-line", required=True,
                         help='Output line from sign_update, e.g. sparkle:edSignature="..." length="..."')
     parser.add_argument("--release-notes-url", required=True)
-    parser.add_argument("--min-macos", default="14.0")
+    parser.add_argument("--min-macos", default="26.0")
     args = parser.parse_args()
 
     sig_attrs = parse_signature_line(args.signature_line)

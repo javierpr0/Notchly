@@ -655,19 +655,6 @@ struct NotchPillContent: View {
     }
 }
 
-struct SpinnerView: View {
-    @State private var isAnimating = false
-
-    var body: some View {
-        Circle()
-            .trim(from: 0.05, to: 0.8)
-            .stroke(Color.white, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-            .rotationEffect(.degrees(isAnimating ? 360 : 0))
-            .animation(.linear(duration: 0.8).repeatForever(autoreverses: false), value: isAnimating)
-            .onAppear { isAnimating = true }
-    }
-}
-
 // MARK: - CVDisplayLink wrapper for smooth animation
 
 /// Drives a frame-by-frame animation callback on the display refresh rate.

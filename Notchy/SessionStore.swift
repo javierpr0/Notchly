@@ -76,6 +76,9 @@ class SessionStore {
         }
     }
 
+    /// Tasks whose working phase was shorter than this don't emit a
+    /// "task completed" pill/notification — avoids noise from trivial commands.
+    private static let minTaskWorkDuration: TimeInterval = 7
     private static let sessionsKey = "persistedSessions"
     private static let activeSessionKey = "activeSessionId"
     private static let persistDebounceInterval: TimeInterval = 1.5
@@ -324,16 +327,17 @@ class SessionStore {
             NotificationCenter.default.post(name: .NotchyNotchStatusChanged, object: nil)
         }
 
-        // Per-pane working→idle delay for taskCompleted
+        // Per-pane working→idle delay for taskCompleted. Skip trivial tasks,
+        // but measure the ACTUAL working duration (idle moment − start) now —
+        // the old check read `now − start` inside the delayed task, so the 3 s
+        // confirmation sleep inflated it and suppressed real short tasks.
         if status == .idle && oldPaneStatus == .working {
-            let workingStartedAt = sessions[index].paneWorkingStartedAt[paneId]
+            let workDuration = sessions[index].paneWorkingStartedAt[paneId].map { Date().timeIntervalSince($0) }
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(3))
                 guard let idx = self.sessions.firstIndex(where: { $0.id == sessionId }),
                       self.sessions[idx].paneStatuses[paneId] == .idle else { return }
-                if let started = workingStartedAt, Date().timeIntervalSince(started) < 10 {
-                    return
-                }
+                if let d = workDuration, d < Self.minTaskWorkDuration { return }
                 self.updateTerminalStatus(paneId, status: .taskCompleted)
             }
         }

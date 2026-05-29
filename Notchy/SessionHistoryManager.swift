@@ -106,14 +106,24 @@ class SessionHistoryManager {
     /// only the final delivery hops back to main. Avoids a multi-hundred-ms
     /// main-thread stall when opening the history viewer on a large log.
     func readHistoryAsync(for sessionId: UUID, completion: @escaping (String) -> Void) {
-        let path = logPath(for: sessionId)
+        readHistoryAsync(for: [sessionId], completion: completion)
+    }
+
+    /// Reads and concatenates the logs of several panes (a session's split
+    /// tree) in tree order, each separated by a divider. All file work runs on
+    /// `queue`; only delivery hops to main.
+    func readHistoryAsync(for paneIds: [UUID], completion: @escaping (String) -> Void) {
         queue.async { [self] in
-            // Flush any buffered writes so reads see the latest data.
-            flushPending(for: sessionId)
-            openHandles[sessionId]?.synchronizeFile()
-            let raw = (try? String(contentsOf: path, encoding: .utf8)) ?? ""
-            let stripped = Self.stripAnsi(raw)
-            DispatchQueue.main.async { completion(stripped) }
+            var parts: [String] = []
+            for paneId in paneIds {
+                flushPending(for: paneId)
+                openHandles[paneId]?.synchronizeFile()
+                let raw = (try? String(contentsOf: logPath(for: paneId), encoding: .utf8)) ?? ""
+                let stripped = Self.stripAnsi(raw)
+                if !stripped.isEmpty { parts.append(stripped) }
+            }
+            let joined = parts.joined(separator: "\n\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n")
+            DispatchQueue.main.async { completion(joined) }
         }
     }
 

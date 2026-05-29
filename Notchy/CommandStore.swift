@@ -195,8 +195,10 @@ class CommandStore {
 
     private func loadCommands(for directory: String) -> [StoredCommand] {
         let path = filePath(for: directory)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
         guard let data = try? Data(contentsOf: path),
-              let file = try? JSONDecoder().decode(CommandFile.self, from: data) else {
+              let file = try? decoder.decode(CommandFile.self, from: data) else {
             return []
         }
         return file.commands

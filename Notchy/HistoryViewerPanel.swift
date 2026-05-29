@@ -5,8 +5,6 @@ class HistoryViewerPanel: NSPanel {
     private let textView: NSTextView
 
     init(sessionName: String, sessionId: UUID) {
-        let content = SessionHistoryManager.shared.readHistory(for: sessionId)
-
         scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 700, height: 500))
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
@@ -42,12 +40,16 @@ class HistoryViewerPanel: NSPanel {
         self.isReleasedWhenClosed = false
         self.center()
 
-        if content.isEmpty {
-            textView.string = L10n.shared.noHistory
-        } else {
-            textView.string = content
-            // Scroll to bottom
-            textView.scrollToEndOfDocument(nil)
+        // The read + ANSI strip runs off-main; fill the view when it lands so
+        // opening history on a large log never blocks the UI.
+        SessionHistoryManager.shared.readHistoryAsync(for: sessionId) { [weak self] content in
+            guard let self else { return }
+            if content.isEmpty {
+                self.textView.string = L10n.shared.noHistory
+            } else {
+                self.textView.string = content
+                self.textView.scrollToEndOfDocument(nil)
+            }
         }
     }
 }

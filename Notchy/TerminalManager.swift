@@ -363,8 +363,8 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
 
         // Log raw terminal output for session history
         if !isInitializing {
-            if let text = String(bytes: slice, encoding: .utf8), !text.isEmpty {
-                SessionHistoryManager.shared.appendText(text, for: id)
+            if !slice.isEmpty {
+                SessionHistoryManager.shared.appendData(Data(slice), for: id)
             }
         }
 
@@ -1228,12 +1228,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         } else if let cmd = config?.command {
             terminal.send(txt: "cd \(escapedDir) && clear && \(cmd)\r")
         } else {
-            let hasClaude = launchClaude && FileManager.default.fileExists(atPath: (workingDirectory as NSString).appendingPathComponent("CLAUDE.md"))
-            if hasClaude {
-                terminal.send(txt: "cd \(escapedDir) && clear && claude\r")
-            } else {
-                terminal.send(txt: "cd \(escapedDir) && clear\r")
-            }
+            sendClaudeLaunch(to: terminal, escapedDir: escapedDir, workingDirectory: workingDirectory, launchClaude: launchClaude)
         }
 
         terminals[sessionId] = terminal
@@ -1258,12 +1253,26 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         } else if let cmd = configCommand {
             terminal.send(txt: "cd \(escapedDir) && clear && \(cmd)\r")
         } else {
-            let hasClaude = launchClaude && FileManager.default.fileExists(atPath: (workingDirectory as NSString).appendingPathComponent("CLAUDE.md"))
-            if hasClaude {
-                terminal.send(txt: "cd \(escapedDir) && clear && claude\r")
-            } else {
-                terminal.send(txt: "cd \(escapedDir) && clear\r")
-            }
+            sendClaudeLaunch(to: terminal, escapedDir: escapedDir, workingDirectory: workingDirectory, launchClaude: launchClaude)
+        }
+    }
+
+    /// Decides whether to append `&& claude` based on CLAUDE.md presence, but
+    /// runs the filesystem probe OFF the main thread — a stat on a slow or
+    /// unresponsive volume (asleep external drive, wedged network mount) would
+    /// otherwise stall tab open for seconds. The single combined command is
+    /// sent once resolved; the shell buffers stdin until it is ready, so the
+    /// extra hop is invisible.
+    private func sendClaudeLaunch(to terminal: ClickThroughTerminalView, escapedDir: String, workingDirectory: String, launchClaude: Bool) {
+        guard launchClaude else {
+            terminal.send(txt: "cd \(escapedDir) && clear\r")
+            return
+        }
+        let claudePath = (workingDirectory as NSString).appendingPathComponent("CLAUDE.md")
+        DispatchQueue.global(qos: .userInitiated).async {
+            let hasClaude = FileManager.default.fileExists(atPath: claudePath)
+            let cmd = hasClaude ? "cd \(escapedDir) && clear && claude\r" : "cd \(escapedDir) && clear\r"
+            DispatchQueue.main.async { terminal.send(txt: cmd) }
         }
     }
 

@@ -15,7 +15,7 @@ class SessionHistoryManager {
     private static let maxOpenHandles = 8
 
     /// Coalesced write batching: under heavy terminal output (compiles, npm,
-    /// git log) `appendText` is called hundreds of times per second. Issuing
+    /// git log) `appendData` is called hundreds of times per second. Issuing
     /// one seek+write per chunk back-pressures the dispatch queue. We buffer
     /// bytes per session and flush either on a short debounce or when the
     /// buffer exceeds `flushBytesThreshold`, whichever comes first.
@@ -59,8 +59,8 @@ class SessionHistoryManager {
         baseDir.appendingPathComponent("\(sessionId.uuidString).log")
     }
 
-    func appendText(_ text: String, for sessionId: UUID) {
-        guard !text.isEmpty, let data = text.data(using: .utf8) else { return }
+    func appendData(_ data: Data, for sessionId: UUID) {
+        guard !data.isEmpty else { return }
         queue.async { [self] in
             if var pending = pendingWrites[sessionId] {
                 pending.data.append(data)
@@ -101,15 +101,20 @@ class SessionHistoryManager {
         rotateIfNeeded(at: path, sessionId: sessionId)
     }
 
-    func readHistory(for sessionId: UUID) -> String {
+    /// Reads the session log entirely off the main thread. The flush, the up-to
+    /// 5 MB file read and the ANSI-stripping regex passes all run on `queue`;
+    /// only the final delivery hops back to main. Avoids a multi-hundred-ms
+    /// main-thread stall when opening the history viewer on a large log.
+    func readHistoryAsync(for sessionId: UUID, completion: @escaping (String) -> Void) {
         let path = logPath(for: sessionId)
-        // Flush any buffered writes so reads see the latest data.
-        queue.sync { [self] in
+        queue.async { [self] in
+            // Flush any buffered writes so reads see the latest data.
             flushPending(for: sessionId)
             openHandles[sessionId]?.synchronizeFile()
+            let raw = (try? String(contentsOf: path, encoding: .utf8)) ?? ""
+            let stripped = Self.stripAnsi(raw)
+            DispatchQueue.main.async { completion(stripped) }
         }
-        let raw = (try? String(contentsOf: path, encoding: .utf8)) ?? ""
-        return Self.stripAnsi(raw)
     }
 
     func deleteHistory(for sessionId: UUID) {

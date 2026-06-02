@@ -64,7 +64,7 @@ struct SessionTabBar: View {
                 .opacity(draggingSessionId == session.id ? 0.85 : 1.0)
                 .scaleEffect(draggingSessionId == session.id ? 1.04 : 1.0)
                 .animation(DS.Motion.snap, value: draggingSessionId)
-                .gesture(
+                .highPriorityGesture(
                     DragGesture(minimumDistance: 6, coordinateSpace: .named("tabBar"))
                         .onChanged { value in
                             if draggingSessionId == nil {

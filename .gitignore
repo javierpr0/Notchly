@@ -27,3 +27,6 @@ build-release/
 # Claude Code
 .claude/
 *.snapshot
+
+# Internal dev docs (not for public repo)
+docs/CAPABILITIES.md

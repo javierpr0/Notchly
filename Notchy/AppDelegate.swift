@@ -1,9 +1,10 @@
 import AppKit
 import Sparkle
 import SwiftUI
+import UserNotifications
 
 @MainActor
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private let statusItem: NSStatusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private lazy var panel: TerminalPanel = TerminalPanel(sessionStore: sessionStore)
     private var notchWindow: NotchWindow?
@@ -46,6 +47,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             setupNotchWindow()
         }
         setupHotkey()
+        setupNotificationActions()
         setupUpdater()
         observeUpdaterWindows()
         FullDiskAccessChecker.promptIfNeeded()
@@ -430,6 +432,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let screenRect = window.convertToScreen(buttonRect)
             panel.showPanel(below: screenRect)
         }
+    }
+
+    // MARK: - Notification actions
+
+    private func setupNotificationActions() {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        let view = UNNotificationAction(
+            identifier: "VIEW",
+            title: L10n.shared.viewAction,
+            options: [.foreground]
+        )
+        let category = UNNotificationCategory(
+            identifier: AppNotification.sessionCategory,
+            actions: [view],
+            intentIdentifiers: [],
+            options: []
+        )
+        center.setNotificationCategories([category])
+    }
+
+    /// Tapping the notification (or its "View" action) brings Notchly forward
+    /// and opens the session that fired it.
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        let userInfo = response.notification.request.content.userInfo
+        if let idString = userInfo[AppNotification.sessionIdKey] as? String,
+           let id = UUID(uuidString: idString) {
+            DispatchQueue.main.async { [weak self] in
+                NSApp.activate(ignoringOtherApps: true)
+                self?.sessionStore.selectSession(id)
+                self?.showPanelBelowStatusItem()
+            }
+        }
+        completionHandler()
     }
 
 }

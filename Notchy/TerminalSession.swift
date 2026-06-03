@@ -16,6 +16,14 @@ enum TerminalStatus: Equatable {
     case sleeping
 }
 
+/// A named, ordered grouping of sessions. Membership is exclusive (a session
+/// belongs to at most one group). Persisted separately from sessions.
+struct TabGroup: Identifiable, Codable, Equatable {
+    let id: UUID
+    var name: String
+    var sessionIds: [UUID]
+}
+
 struct TerminalSession: Identifiable {
     let id: UUID
     var projectName: String

@@ -6,6 +6,13 @@ import os
 
 private let logger = Logger(subsystem: "com.notchly", category: "SessionStore")
 
+/// Shared identifiers for the macOS notifications that carry a "View" action
+/// back to a specific session (registered in AppDelegate, set in SessionStore).
+enum AppNotification {
+    static let sessionCategory = "NOTCHY_SESSION"
+    static let sessionIdKey = "sessionId"
+}
+
 extension Notification.Name {
     static let NotchyHidePanel = Notification.Name("NotchyHidePanel")
     static let NotchyExpandPanel = Notification.Name("NotchyExpandPanel")
@@ -20,6 +27,9 @@ class SessionStore {
 
     var sessions: [TerminalSession] = []
     var activeSessionId: UUID?
+    /// Sessions with output that arrived while they were not the active tab.
+    /// Ephemeral (not persisted); cleared when the user opens the tab.
+    var unreadSessionIds: Set<UUID> = []
     var isPinned: Bool = {
         if UserDefaults.standard.object(forKey: "isPinned") == nil { return true }
         return UserDefaults.standard.bool(forKey: "isPinned")
@@ -34,6 +44,14 @@ class SessionStore {
         didSet {
             UserDefaults.standard.set(hideSleepingTabs, forKey: "hideSleepingTabs")
         }
+    }
+    /// Named tab groups. Membership is exclusive. Persisted separately.
+    var groups: [TabGroup] = [] {
+        didSet { persistGroups() }
+    }
+    /// Active group filter for the tab strip. `nil` means "All" (show every tab).
+    var activeGroupId: UUID? {
+        didSet { UserDefaults.standard.set(activeGroupId?.uuidString, forKey: Self.activeGroupKey) }
     }
     var isTerminalExpanded = true
     var isWindowFocused = true
@@ -81,12 +99,15 @@ class SessionStore {
     private static let minTaskWorkDuration: TimeInterval = 7
     private static let sessionsKey = "persistedSessions"
     private static let activeSessionKey = "activeSessionId"
+    private static let groupsKey = "tabGroups"
+    private static let activeGroupKey = "activeGroupId"
     private static let persistDebounceInterval: TimeInterval = 1.5
 
     private var persistDebounceTask: DispatchWorkItem?
 
     init() {
         restoreSessions()
+        restoreGroups()
         requestNotificationPermission()
         if sessions.isEmpty {
             createQuickSession()
@@ -99,11 +120,15 @@ class SessionStore {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
-    private func sendNotification(title: String, body: String) {
+    private func sendNotification(title: String, body: String, sessionId: UUID?) {
         guard !isWindowFocused else { return }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
+        if let sessionId {
+            content.categoryIdentifier = AppNotification.sessionCategory
+            content.userInfo = [AppNotification.sessionIdKey: sessionId.uuidString]
+        }
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
     }
@@ -181,6 +206,62 @@ class SessionStore {
         }
     }
 
+    // MARK: - Tab Groups
+
+    private func persistGroups() {
+        if let data = try? JSONEncoder().encode(groups) {
+            UserDefaults.standard.set(data, forKey: Self.groupsKey)
+        }
+    }
+
+    private func restoreGroups() {
+        if let data = UserDefaults.standard.data(forKey: Self.groupsKey),
+           let decoded = try? JSONDecoder().decode([TabGroup].self, from: data) {
+            groups = decoded
+        }
+        if let saved = UserDefaults.standard.string(forKey: Self.activeGroupKey),
+           let id = UUID(uuidString: saved),
+           groups.contains(where: { $0.id == id }) {
+            activeGroupId = id
+        }
+    }
+
+    @discardableResult
+    func createGroup(name: String) -> UUID {
+        let group = TabGroup(id: UUID(), name: name, sessionIds: [])
+        groups.append(group)
+        return group.id
+    }
+
+    func renameGroup(_ id: UUID, to name: String) {
+        guard let i = groups.firstIndex(where: { $0.id == id }) else { return }
+        groups[i].name = name
+    }
+
+    func deleteGroup(_ id: UUID) {
+        groups.removeAll { $0.id == id }
+        if activeGroupId == id { activeGroupId = nil }
+    }
+
+    func selectGroup(_ id: UUID?) {
+        activeGroupId = id
+    }
+
+    /// Exclusive membership: assigning a session to a group removes it from any
+    /// other. Pass `nil` to ungroup.
+    func assignSession(_ sessionId: UUID, toGroup groupId: UUID?) {
+        for i in groups.indices {
+            groups[i].sessionIds.removeAll { $0 == sessionId }
+        }
+        if let groupId, let i = groups.firstIndex(where: { $0.id == groupId }) {
+            groups[i].sessionIds.append(sessionId)
+        }
+    }
+
+    func groupId(for sessionId: UUID) -> UUID? {
+        groups.first { $0.sessionIds.contains(sessionId) }?.id
+    }
+
     func updateWorkingDirectory(_ paneId: UUID, directory: String) {
         guard let index = sessions.firstIndex(where: { $0.splitRoot.containsPane(paneId) }) else { return }
         let oldDir = sessions[index].splitRoot.workingDirectory(for: paneId)
@@ -196,6 +277,7 @@ class SessionStore {
     /// If the tab is sleeping, selecting it wakes it (terminal will respawn).
     func selectSession(_ id: UUID) {
         activeSessionId = id
+        unreadSessionIds.remove(id)
         if let index = sessions.firstIndex(where: { $0.id == id }) {
             if sessions[index].isSleeping {
                 sessions[index].isSleeping = false
@@ -253,6 +335,10 @@ class SessionStore {
         )
         sessions.append(session)
         activeSessionId = session.id
+        // Keep a new tab visible: if a group filter is active, the tab joins it.
+        if let groupId = activeGroupId {
+            assignSession(session.id, toGroup: groupId)
+        }
         persistSessions()
     }
 
@@ -266,6 +352,9 @@ class SessionStore {
         )
         sessions.append(session)
         activeSessionId = session.id
+        if let groupId = activeGroupId {
+            assignSession(session.id, toGroup: groupId)
+        }
         persistSessions()
     }
 
@@ -273,6 +362,17 @@ class SessionStore {
         guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
         sessions[index].projectName = newName
         persistSessions()
+    }
+
+    /// Flag a session as having unread output when a chunk arrives on a pane
+    /// whose tab is not active. Idempotent: only mutates on the first chunk
+    /// after the flag was cleared, so a busy background tab won't churn.
+    func noteOutput(forPane paneId: UUID) {
+        guard let index = sessions.firstIndex(where: { $0.splitRoot.containsPane(paneId) }) else { return }
+        let sessionId = sessions[index].id
+        guard sessionId != activeSessionId, !sessions[index].isSleeping else { return }
+        guard !unreadSessionIds.contains(sessionId) else { return }
+        unreadSessionIds.insert(sessionId)
     }
 
     func updateTerminalStatus(_ paneId: UUID, status: TerminalStatus) {
@@ -304,7 +404,7 @@ class SessionStore {
             let sessionName = sessions[index].projectName
             if newAggregate == .waitingForInput && previousAggregate != .waitingForInput {
                 playSound(named: "waitingForInput")
-                sendNotification(title: L10n.shared.actionRequired, body: L10n.shared.needsInput(sessionName))
+                sendNotification(title: L10n.shared.actionRequired, body: L10n.shared.needsInput(sessionName), sessionId: sessionId)
                 if isPinned && !isTerminalExpanded && sessionId == activeSessionId {
                     isTerminalExpanded = true
                     NotificationCenter.default.post(name: .NotchyExpandPanel, object: nil)
@@ -321,7 +421,7 @@ class SessionStore {
                     body = L10n.shared.sessionFinished(sessionName)
                 }
                 playSound(named: "taskCompleted")
-                sendNotification(title: title, body: body)
+                sendNotification(title: title, body: body, sessionId: sessionId)
                 paneCompletionInfo.removeValue(forKey: paneId)
             }
             NotificationCenter.default.post(name: .NotchyNotchStatusChanged, object: nil)
@@ -561,6 +661,7 @@ class SessionStore {
         }
         SessionHistoryManager.shared.deleteHistory(for: id)
         sessions.removeAll { $0.id == id }
+        assignSession(id, toGroup: nil)
         if activeSessionId == id {
             activeSessionId = sessions.first?.id
         }

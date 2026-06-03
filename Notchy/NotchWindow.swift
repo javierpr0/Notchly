@@ -605,6 +605,16 @@ enum NotchDisplayState: Equatable {
         }
         return .idle
     }
+
+    /// Number of sessions currently demanding attention (working, waiting for
+    /// input, or just completed). Drives the count badge in the notch pill.
+    @MainActor static var attentionCount: Int {
+        SessionStore.shared.sessions.filter {
+            $0.terminalStatus == .working
+                || $0.terminalStatus == .waitingForInput
+                || $0.terminalStatus == .taskCompleted
+        }.count
+    }
 }
 
 // MARK: - Notch pill SwiftUI content
@@ -612,6 +622,7 @@ enum NotchDisplayState: Equatable {
 struct NotchPillContent: View {
     var isHovering: Bool = false
     private var displayState: NotchDisplayState { .current }
+    private var attentionCount: Int { NotchDisplayState.attentionCount }
 
     var body: some View {
         ZStack {
@@ -628,22 +639,34 @@ struct NotchPillContent: View {
                 } else {
                     Spacer()
 
-                    switch displayState {
-                    case .taskCompleted:
-                        NotchyIcon(kind: .done, size: 16, tint: DS.Color.statusDone)
-                            .transition(.scale.combined(with: .opacity))
-                    case .waitingForInput:
-                        NotchyIcon(kind: .waiting, size: 16, tint: DS.Color.statusWaiting)
-                            .transition(.scale.combined(with: .opacity))
-                    case .working:
-                        NotchyIcon(kind: .working, size: 14, tint: DS.Color.statusWorking)
-                            .transition(.scale.combined(with: .opacity))
-                    case .idle:
-                        EmptyView()
+                    HStack(spacing: 2) {
+                        switch displayState {
+                        case .taskCompleted:
+                            NotchyIcon(kind: .done, size: 16, tint: DS.Color.statusDone)
+                                .transition(.scale.combined(with: .opacity))
+                        case .waitingForInput:
+                            NotchyIcon(kind: .waiting, size: 16, tint: DS.Color.statusWaiting)
+                                .transition(.scale.combined(with: .opacity))
+                        case .working:
+                            NotchyIcon(kind: .working, size: 14, tint: DS.Color.statusWorking)
+                                .transition(.scale.combined(with: .opacity))
+                        case .idle:
+                            EmptyView()
+                        }
+
+                        // Count badge: only when more than one session is active,
+                        // so a single session shows just its status icon.
+                        if attentionCount > 1 {
+                            Text("\(attentionCount)")
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.9))
+                                .transition(.scale.combined(with: .opacity))
+                        }
                     }
                 }
             }
             .animation(.easeInOut(duration: 0.25), value: displayState)
+            .animation(.easeInOut(duration: 0.25), value: attentionCount)
             .padding(.horizontal, 12 + (isHovering ? NotchPillView.earRadius : 0))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -397,6 +397,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         let hadError: Bool = (newStatus == .idle) ? Self.detectError(in: snap.recentLines) : false
 
         Task { @MainActor in
+            SessionStore.shared.noteOutput(forPane: id)
             if let summary {
                 SessionStore.shared.paneCompletionInfo[id] = PaneCompletionInfo(summary: summary, hadError: hadError)
             }

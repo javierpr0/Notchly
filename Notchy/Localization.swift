@@ -37,6 +37,15 @@ final class L10n {
     // MARK: - AppDelegate / Status Menu
 
     var showInNotch: String { isSpanish ? "Mostrar en notch..." : "Show in notch..." }
+    var viewAction: String { isSpanish ? "Ver" : "View" }
+    var tabGroups: String { isSpanish ? "Grupos" : "Groups" }
+    var allGroups: String { isSpanish ? "Todos" : "All" }
+    var newGroup: String { isSpanish ? "Nuevo grupo…" : "New Group…" }
+    var renameGroup: String { isSpanish ? "Renombrar grupo…" : "Rename Group…" }
+    var deleteGroup: String { isSpanish ? "Eliminar grupo" : "Delete Group" }
+    var moveToGroup: String { isSpanish ? "Mover a grupo" : "Move to Group" }
+    var noGroup: String { isSpanish ? "Sin grupo" : "No Group" }
+    var newGroupNamePrompt: String { isSpanish ? "Nombre del grupo" : "Group name" }
     var newSession: String { isSpanish ? "Nueva sesión" : "New Session" }
     var checkpoint: String { isSpanish ? "Punto de control" : "Checkpoint" }
     var save: String { isSpanish ? "Guardar..." : "Save..." }

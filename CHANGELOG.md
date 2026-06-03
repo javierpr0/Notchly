@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-06-02
+
+### Added
+- Tab groups: assign tabs to named groups and filter the strip by the active group. A dropdown in the chrome switches between "All" and each group (create / rename / delete), and each tab's context menu has "Move to Group". Group membership is exclusive and persists across restarts; a new tab joins the active group so the strip never loses your focus.
+- Unread-output badge: a tab that is not active shows an accent dot when new output arrives on it, so background work is visible at a glance. Cleared when you open the tab.
+- Attention counter in the notch pill: when more than one session is active (working, waiting for input, or just completed) the pill shows the count next to the status icon.
+- "View" action on notifications: tapping a "task done" / "needs input" notification (or its View button) brings Notchly forward and opens the session that fired it.
+
+### Fixed
+- Tab drag-to-reorder stopped working: the tab's tap gestures (select / double-click rename) outranked the reorder drag, so the drag never started. The reorder gesture is now high-priority, so dragging reorders while a plain click still selects.
+
 ## [0.23.2] - 2026-05-29
 
 ### Security
@@ -246,7 +257,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global backtick hotkey to toggle panel
 - Pin panel open option
 
-[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.23.2...HEAD
+[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/javierpr0/notchly/compare/v0.23.2...v0.24.0
 [0.23.2]: https://github.com/javierpr0/notchly/compare/v0.23.1...v0.23.2
 [0.23.1]: https://github.com/javierpr0/notchly/compare/v0.23.0...v0.23.1
 [0.23.0]: https://github.com/javierpr0/notchly/compare/v0.22.5...v0.23.0

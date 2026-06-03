@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct TabFramePreferenceKey: PreferenceKey {
@@ -21,10 +22,17 @@ struct SessionTabBar: View {
     /// it's waking up) so the user never sees the strip "lose" their current
     /// selection.
     private var visibleSessions: [TerminalSession] {
-        if sessionStore.hideSleepingTabs {
-            return sessionStore.sessions.filter { !$0.isSleeping || $0.id == sessionStore.activeSessionId }
+        var base = sessionStore.sessions
+        // Group filter (composes with the sleeping filter below). The active tab
+        // is always kept visible so selecting it never makes the strip empty.
+        if let gid = sessionStore.activeGroupId,
+           let group = sessionStore.groups.first(where: { $0.id == gid }) {
+            base = base.filter { group.sessionIds.contains($0.id) || $0.id == sessionStore.activeSessionId }
         }
-        return sessionStore.sessions
+        if sessionStore.hideSleepingTabs {
+            return base.filter { !$0.isSleeping || $0.id == sessionStore.activeSessionId }
+        }
+        return base
     }
 
     var body: some View {
@@ -34,6 +42,7 @@ struct SessionTabBar: View {
                 SessionTab(
                     session: session,
                     isActive: session.id == sessionStore.activeSessionId,
+                    hasUnread: sessionStore.unreadSessionIds.contains(session.id),
                     terminalActive: session.hasStarted,
                     terminalStatus: session.terminalStatus,
                     foregroundOpacity: sessionStore.isWindowFocused ? 1.0 : 0.6,
@@ -158,6 +167,7 @@ struct SessionTabBar: View {
 struct SessionTab: View {
     let session: TerminalSession
     let isActive: Bool
+    var hasUnread: Bool = false
     let terminalActive: Bool
     var terminalStatus: TerminalStatus = .idle
     var foregroundOpacity: Double = 1.0
@@ -199,6 +209,22 @@ struct SessionTab: View {
         renameText = name
     }
 
+    /// Modal text prompt for naming/renaming a group. Returns nil on cancel or
+    /// empty input. Shared by the tab context menu and the group dropdown.
+    static func promptForName(title: String, initial: String) -> String? {
+        let alert = NSAlert()
+        alert.messageText = title
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+        field.stringValue = initial
+        alert.accessoryView = field
+        alert.addButton(withTitle: L10n.shared.save)
+        alert.addButton(withTitle: L10n.shared.cancel)
+        alert.window.initialFirstResponder = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        let trimmed = field.stringValue.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     private func showHistory() {
         // History is logged per pane (terminal.sessionId is a pane id), so read
         // every pane in this session's split tree, not the session id — that
@@ -230,13 +256,14 @@ struct SessionTab: View {
                     .frame(width: 9, height: 9)
             case .idle, .interrupted:
                 Circle()
-                    .fill(DS.Color.statusIdle.opacity(0.6))
-                    .frame(width: 5, height: 5)
+                    .fill(hasUnread ? DS.Color.accent : DS.Color.statusIdle.opacity(0.6))
+                    .frame(width: hasUnread ? 6 : 5, height: hasUnread ? 6 : 5)
                     .frame(width: 9, height: 9)
             }
         }
         .transition(.opacity.combined(with: .scale(scale: 0.8)))
         .animation(DS.Motion.snap, value: terminalStatus)
+        .animation(DS.Motion.snap, value: hasUnread)
     }
 
     var body: some View {
@@ -345,6 +372,26 @@ struct SessionTab: View {
             if canMoveRight {
                 Button(L10n.shared.moveRight) {
                     onMoveRight?()
+                }
+            }
+
+            Divider()
+
+            Menu(L10n.shared.moveToGroup) {
+                Button(L10n.shared.noGroup) {
+                    SessionStore.shared.assignSession(session.id, toGroup: nil)
+                }
+                ForEach(SessionStore.shared.groups) { group in
+                    Button(group.name) {
+                        SessionStore.shared.assignSession(session.id, toGroup: group.id)
+                    }
+                }
+                Divider()
+                Button(L10n.shared.newGroup) {
+                    if let name = SessionTab.promptForName(title: L10n.shared.newGroupNamePrompt, initial: "") {
+                        let id = SessionStore.shared.createGroup(name: name)
+                        SessionStore.shared.assignSession(session.id, toGroup: id)
+                    }
                 }
             }
 

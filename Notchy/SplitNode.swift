@@ -129,6 +129,21 @@ indirect enum SplitNode: Codable, Identifiable, Equatable {
         }
     }
 
+    /// Deep copy of the tree with fresh UUIDs on every node, preserving
+    /// directions, ratios and working directories. Used to duplicate a tab:
+    /// the layout is reproduced while each new pane gets its own terminal.
+    func clonedWithFreshIds() -> SplitNode {
+        switch self {
+        case .pane(_, let dir):
+            return .pane(id: UUID(), workingDirectory: dir)
+        case .split(_, let direction, let first, let second, let ratio):
+            return .split(id: UUID(), direction: direction,
+                          first: first.clonedWithFreshIds(),
+                          second: second.clonedWithFreshIds(),
+                          ratio: ratio)
+        }
+    }
+
     /// Next pane ID after the given one (wraps around)
     func nextPaneId(after paneId: UUID) -> UUID? {
         let ids = allPaneIds

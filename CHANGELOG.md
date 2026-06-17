@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-06-17
+
+### Added
+- Open a folder by dragging it onto the panel: drop a folder (or a file, which resolves to its enclosing folder) anywhere on the panel to open a new terminal tab rooted there. A highlighted drop zone appears while you drag. If the folder has a CLAUDE.md, Claude launches automatically — same as opening a project.
+- Duplicate a tab with its full split layout: a new "Duplicate Tab" item in the tab context menu recreates the entire pane tree, so a tab with three terminals duplicates into another tab with three terminals at the same directories. Each pane gets a fresh terminal (live terminal state is not copied).
+- Mute notifications per tab: each tab's context menu can silence its "task done" / "needs input" notifications. The setting persists across restarts.
+
 ## [0.25.0] - 2026-06-17
 
 ### Removed
@@ -270,7 +277,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global backtick hotkey to toggle panel
 - Pin panel open option
 
-[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/javierpr0/notchly/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/javierpr0/notchly/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/javierpr0/notchly/compare/v0.23.2...v0.24.0
 [0.23.2]: https://github.com/javierpr0/notchly/compare/v0.23.1...v0.23.2

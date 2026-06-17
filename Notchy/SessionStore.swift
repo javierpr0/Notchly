@@ -111,6 +111,7 @@ class SessionStore {
 
     private func sendNotification(title: String, body: String, sessionId: UUID?) {
         guard !isWindowFocused else { return }
+        if let sessionId, sessions.first(where: { $0.id == sessionId })?.notificationsMuted == true { return }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
@@ -179,7 +180,8 @@ class SessionStore {
                 id: $0.id, projectName: $0.projectName, projectPath: $0.projectPath,
                 workingDirectory: $0.workingDirectory,
                 splitRoot: $0.splitRoot, focusedPaneId: $0.focusedPaneId,
-                isSleeping: $0.isSleeping ? true : nil
+                isSleeping: $0.isSleeping ? true : nil,
+                notificationsMuted: $0.notificationsMuted ? true : nil
             )
         }
         do {
@@ -281,6 +283,50 @@ class SessionStore {
         )
         sessions.append(session)
         activeSessionId = session.id
+        persistSessions()
+    }
+
+    /// Opens a new tab rooted at a directory (e.g. a folder dropped onto the
+    /// panel). Treated as a project so the terminal auto-launches Claude when a
+    /// CLAUDE.md is present, matching the normal project-open behavior.
+    func createSession(forDirectory dir: String) {
+        let name = (dir as NSString).lastPathComponent
+        let session = TerminalSession(
+            projectName: name.isEmpty ? "Terminal" : name,
+            projectPath: dir,
+            workingDirectory: dir,
+            started: true
+        )
+        sessions.append(session)
+        activeSessionId = session.id
+        persistSessions()
+    }
+
+    /// Duplicates a tab including its full split layout: the pane tree is cloned
+    /// with fresh pane ids (so each new pane spawns its own terminal) at the same
+    /// working directories. Live terminal state is not copied. The copy is
+    /// inserted right after the original and becomes active.
+    func duplicateSession(_ id: UUID) {
+        guard let src = sessions.first(where: { $0.id == id }) else { return }
+        let clonedRoot = src.splitRoot.clonedWithFreshIds()
+        var dup = TerminalSession(
+            projectName: src.projectName,
+            projectPath: src.projectPath,
+            workingDirectory: src.workingDirectory,
+            started: true,
+            customCommand: src.customCommand
+        )
+        dup.splitRoot = clonedRoot
+        dup.focusedPaneId = clonedRoot.allPaneIds.first ?? dup.focusedPaneId
+        let insertAt = (sessions.firstIndex(where: { $0.id == id }) ?? sessions.count - 1) + 1
+        sessions.insert(dup, at: insertAt)
+        activeSessionId = dup.id
+        persistSessions()
+    }
+
+    func toggleNotifications(_ id: UUID) {
+        guard let i = sessions.firstIndex(where: { $0.id == id }) else { return }
+        sessions[i].notificationsMuted.toggle()
         persistSessions()
     }
 

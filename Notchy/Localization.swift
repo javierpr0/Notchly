@@ -105,6 +105,10 @@ final class L10n {
     var closeTabConfirm: String { isSpanish ? "Cerrar pestaña" : "Close Tab" }
     var closeTabConfirmMessage: String { isSpanish ? "Esta pestaña está trabajando. Cerrarla termina su terminal y se pierde lo que esté ejecutando." : "This tab is busy. Closing it ends its terminal and any running work is lost." }
     var restore: String { isSpanish ? "Restaurar" : "Restore" }
+    var duplicateTab: String { isSpanish ? "Duplicar pestaña" : "Duplicate Tab" }
+    var muteNotifications: String { isSpanish ? "Silenciar notificaciones" : "Mute Notifications" }
+    var unmuteNotifications: String { isSpanish ? "Activar notificaciones" : "Unmute Notifications" }
+    var dropToOpen: String { isSpanish ? "Suelta para abrir una terminal aquí" : "Drop to open a terminal here" }
     var sleepTab: String { isSpanish ? "Dormir pestaña" : "Sleep Tab" }
     var wakeTab: String { isSpanish ? "Despertar pestaña" : "Wake Tab" }
     var sleepOthers: String { isSpanish ? "Dormir las demás" : "Sleep Other Tabs" }

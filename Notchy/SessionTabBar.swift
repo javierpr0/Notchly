@@ -376,6 +376,10 @@ struct SessionTab: View {
                 startRename()
             }
 
+            Button(L10n.shared.duplicateTab) {
+                SessionStore.shared.duplicateSession(session.id)
+            }
+
             Button(session.isSleeping ? L10n.shared.wakeTab : L10n.shared.sleepTab) {
                 SessionStore.shared.toggleSleep(session.id)
             }
@@ -391,6 +395,10 @@ struct SessionTab: View {
                 Button(SessionStore.shared.hideSleepingTabs ? L10n.shared.showSleeping : L10n.shared.hideSleeping) {
                     SessionStore.shared.hideSleepingTabs.toggle()
                 }
+            }
+
+            Button(session.notificationsMuted ? L10n.shared.unmuteNotifications : L10n.shared.muteNotifications) {
+                SessionStore.shared.toggleNotifications(session.id)
             }
 
             Button(L10n.shared.restart) {

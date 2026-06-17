@@ -43,8 +43,22 @@ struct PanelContentView: View {
     @State private var currentFontSize = TerminalManager.shared.fontSize
     @State private var currentFontName: String? = TerminalManager.shared.fontName
     @State private var availableMonoFonts: [String] = []
+    @State private var isDropTargeted = false
 
     private var theme: TerminalTheme { sessionStore.currentTheme }
+
+    /// Opens a tab for the first dropped folder (a dropped file resolves to its
+    /// enclosing directory). Ignores anything that isn't a local path.
+    private func handleFolderDrop(_ urls: [URL]) -> Bool {
+        for url in urls where url.isFileURL {
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else { continue }
+            let dir = isDir.boolValue ? url.path : url.deletingLastPathComponent().path
+            sessionStore.createSession(forDirectory: dir)
+            return true
+        }
+        return false
+    }
 
     private var foregroundOpacity: Double {
         sessionStore.isWindowFocused ? 1.0 : 0.6
@@ -209,6 +223,25 @@ struct PanelContentView: View {
         }
         .background(Color(nsColor: theme.background).opacity(chromeBackgroundOpacity))
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .dropDestination(for: URL.self) { urls, _ in
+            handleFolderDrop(urls)
+        } isTargeted: { isDropTargeted = $0 }
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(DS.Color.accent.opacity(0.08))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .strokeBorder(DS.Color.accent, lineWidth: 2)
+                    }
+                    .overlay {
+                        Text(L10n.shared.dropToOpen)
+                            .font(DS.Font.bodyMedium)
+                            .foregroundStyle(DS.Color.accent)
+                    }
+                    .allowsHitTesting(false)
+            }
+        }
         .overlay {
             if sessionStore.showCommandPalette,
                let session = sessionStore.activeSession {

@@ -39,6 +39,10 @@ struct TerminalSession: Identifiable {
     /// detection runs.
     var isSleeping: Bool = false
 
+    /// When true, this tab's "task done" / "needs input" notifications are
+    /// suppressed. Persisted so the preference survives restarts.
+    var notificationsMuted: Bool = false
+
     /// Aggregate status across all panes
     var terminalStatus: TerminalStatus {
         if isSleeping { return .sleeping }
@@ -82,6 +86,7 @@ struct TerminalSession: Identifiable {
         self.hasBeenSelected = false
         self.createdAt = Date()
         self.isSleeping = persisted.isSleeping ?? false
+        self.notificationsMuted = persisted.notificationsMuted ?? false
 
         if let root = persisted.splitRoot {
             self.splitRoot = root
@@ -105,4 +110,5 @@ struct PersistedSession: Codable {
     let splitRoot: SplitNode?
     let focusedPaneId: UUID?
     let isSleeping: Bool?
+    let notificationsMuted: Bool?
 }

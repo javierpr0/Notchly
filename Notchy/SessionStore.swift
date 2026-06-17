@@ -45,14 +45,6 @@ class SessionStore {
             UserDefaults.standard.set(hideSleepingTabs, forKey: "hideSleepingTabs")
         }
     }
-    /// Named tab groups. Membership is exclusive. Persisted separately.
-    var groups: [TabGroup] = [] {
-        didSet { persistGroups() }
-    }
-    /// Active group filter for the tab strip. `nil` means "All" (show every tab).
-    var activeGroupId: UUID? {
-        didSet { UserDefaults.standard.set(activeGroupId?.uuidString, forKey: Self.activeGroupKey) }
-    }
     var isTerminalExpanded = true
     var isWindowFocused = true
     var isShowingDialog = false
@@ -99,15 +91,12 @@ class SessionStore {
     private static let minTaskWorkDuration: TimeInterval = 7
     private static let sessionsKey = "persistedSessions"
     private static let activeSessionKey = "activeSessionId"
-    private static let groupsKey = "tabGroups"
-    private static let activeGroupKey = "activeGroupId"
     private static let persistDebounceInterval: TimeInterval = 1.5
 
     private var persistDebounceTask: DispatchWorkItem?
 
     init() {
         restoreSessions()
-        restoreGroups()
         requestNotificationPermission()
         if sessions.isEmpty {
             createQuickSession()
@@ -206,62 +195,6 @@ class SessionStore {
         }
     }
 
-    // MARK: - Tab Groups
-
-    private func persistGroups() {
-        if let data = try? JSONEncoder().encode(groups) {
-            UserDefaults.standard.set(data, forKey: Self.groupsKey)
-        }
-    }
-
-    private func restoreGroups() {
-        if let data = UserDefaults.standard.data(forKey: Self.groupsKey),
-           let decoded = try? JSONDecoder().decode([TabGroup].self, from: data) {
-            groups = decoded
-        }
-        if let saved = UserDefaults.standard.string(forKey: Self.activeGroupKey),
-           let id = UUID(uuidString: saved),
-           groups.contains(where: { $0.id == id }) {
-            activeGroupId = id
-        }
-    }
-
-    @discardableResult
-    func createGroup(name: String) -> UUID {
-        let group = TabGroup(id: UUID(), name: name, sessionIds: [])
-        groups.append(group)
-        return group.id
-    }
-
-    func renameGroup(_ id: UUID, to name: String) {
-        guard let i = groups.firstIndex(where: { $0.id == id }) else { return }
-        groups[i].name = name
-    }
-
-    func deleteGroup(_ id: UUID) {
-        groups.removeAll { $0.id == id }
-        if activeGroupId == id { activeGroupId = nil }
-    }
-
-    func selectGroup(_ id: UUID?) {
-        activeGroupId = id
-    }
-
-    /// Exclusive membership: assigning a session to a group removes it from any
-    /// other. Pass `nil` to ungroup.
-    func assignSession(_ sessionId: UUID, toGroup groupId: UUID?) {
-        for i in groups.indices {
-            groups[i].sessionIds.removeAll { $0 == sessionId }
-        }
-        if let groupId, let i = groups.firstIndex(where: { $0.id == groupId }) {
-            groups[i].sessionIds.append(sessionId)
-        }
-    }
-
-    func groupId(for sessionId: UUID) -> UUID? {
-        groups.first { $0.sessionIds.contains(sessionId) }?.id
-    }
-
     func updateWorkingDirectory(_ paneId: UUID, directory: String) {
         guard let index = sessions.firstIndex(where: { $0.splitRoot.containsPane(paneId) }) else { return }
         let oldDir = sessions[index].splitRoot.workingDirectory(for: paneId)
@@ -335,10 +268,6 @@ class SessionStore {
         )
         sessions.append(session)
         activeSessionId = session.id
-        // Keep a new tab visible: if a group filter is active, the tab joins it.
-        if let groupId = activeGroupId {
-            assignSession(session.id, toGroup: groupId)
-        }
         persistSessions()
     }
 
@@ -352,9 +281,6 @@ class SessionStore {
         )
         sessions.append(session)
         activeSessionId = session.id
-        if let groupId = activeGroupId {
-            assignSession(session.id, toGroup: groupId)
-        }
         persistSessions()
     }
 
@@ -661,7 +587,6 @@ class SessionStore {
         }
         SessionHistoryManager.shared.deleteHistory(for: id)
         sessions.removeAll { $0.id == id }
-        assignSession(id, toGroup: nil)
         if activeSessionId == id {
             activeSessionId = sessions.first?.id
         }

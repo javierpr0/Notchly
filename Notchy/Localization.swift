@@ -38,14 +38,6 @@ final class L10n {
 
     var showInNotch: String { isSpanish ? "Mostrar en notch..." : "Show in notch..." }
     var viewAction: String { isSpanish ? "Ver" : "View" }
-    var tabGroups: String { isSpanish ? "Grupos" : "Groups" }
-    var allGroups: String { isSpanish ? "Todos" : "All" }
-    var newGroup: String { isSpanish ? "Nuevo grupo…" : "New Group…" }
-    var renameGroup: String { isSpanish ? "Renombrar grupo…" : "Rename Group…" }
-    var deleteGroup: String { isSpanish ? "Eliminar grupo" : "Delete Group" }
-    var moveToGroup: String { isSpanish ? "Mover a grupo" : "Move to Group" }
-    var noGroup: String { isSpanish ? "Sin grupo" : "No Group" }
-    var newGroupNamePrompt: String { isSpanish ? "Nombre del grupo" : "Group name" }
     var newSession: String { isSpanish ? "Nueva sesión" : "New Session" }
     var checkpoint: String { isSpanish ? "Punto de control" : "Checkpoint" }
     var save: String { isSpanish ? "Guardar..." : "Save..." }
@@ -110,10 +102,19 @@ final class L10n {
     var renameTab: String { isSpanish ? "Renombrar pestaña" : "Rename Tab" }
     var restart: String { isSpanish ? "Reiniciar" : "Restart" }
     var close: String { isSpanish ? "Cerrar" : "Close" }
+    var closeTabConfirm: String { isSpanish ? "Cerrar pestaña" : "Close Tab" }
+    var closeTabConfirmMessage: String { isSpanish ? "Esta pestaña está trabajando. Cerrarla termina su terminal y se pierde lo que esté ejecutando." : "This tab is busy. Closing it ends its terminal and any running work is lost." }
     var restore: String { isSpanish ? "Restaurar" : "Restore" }
     var sleepTab: String { isSpanish ? "Dormir pestaña" : "Sleep Tab" }
     var wakeTab: String { isSpanish ? "Despertar pestaña" : "Wake Tab" }
     var sleepOthers: String { isSpanish ? "Dormir las demás" : "Sleep Other Tabs" }
+    var sleepOthersConfirm: String { isSpanish ? "Dormir las demás pestañas" : "Sleep Other Tabs" }
+    func sleepOthersConfirmMessage(_ n: Int) -> String {
+        if isSpanish {
+            return "Se dormirá\(n == 1 ? "" : "n") \(n) pestaña\(n == 1 ? "" : "s") activa\(n == 1 ? "" : "s"). Sus terminales se cierran y se pierde lo que estén ejecutando."
+        }
+        return "This will sleep \(n) active tab\(n == 1 ? "" : "s"). Their terminals close and any running work is lost."
+    }
     var wakeAll: String { isSpanish ? "Despertar todas" : "Wake All Tabs" }
     var hideSleeping: String { isSpanish ? "Ocultar dormidas" : "Hide Sleeping" }
     var showSleeping: String { isSpanish ? "Mostrar dormidas" : "Show Sleeping" }

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-06-17
+
+### Removed
+- Tab groups: the grouping/filter feature from 0.24.0 is gone. Tabs are a single flat list again — create, sleep, wake and close them freely without any group bookkeeping. It added complexity without earning its keep.
+
+### Added
+- Confirmation before "Sleep Other Tabs": this closes every other tab's terminal and loses their running work, so it now asks first and shows how many tabs would be affected.
+- Confirmation before closing a busy tab: a tab that is working or waiting for input asks before closing; idle tabs still close instantly so the common case stays friction-free.
+- Update check on every launch: Notchly now checks for updates at startup and notifies you when one is available, letting you choose when to install. It never installs silently or closes the app out from under a running session.
+
+### Changed
+- Sleeping tabs shown in the strip are dimmed so they read as asleep at a glance.
+
 ## [0.24.0] - 2026-06-02
 
 ### Added
@@ -257,7 +270,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global backtick hotkey to toggle panel
 - Pin panel open option
 
-[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/javierpr0/notchly/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/javierpr0/notchly/compare/v0.23.2...v0.24.0
 [0.23.2]: https://github.com/javierpr0/notchly/compare/v0.23.1...v0.23.2
 [0.23.1]: https://github.com/javierpr0/notchly/compare/v0.23.0...v0.23.1

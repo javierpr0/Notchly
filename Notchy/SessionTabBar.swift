@@ -22,17 +22,10 @@ struct SessionTabBar: View {
     /// it's waking up) so the user never sees the strip "lose" their current
     /// selection.
     private var visibleSessions: [TerminalSession] {
-        var base = sessionStore.sessions
-        // Group filter (composes with the sleeping filter below). The active tab
-        // is always kept visible so selecting it never makes the strip empty.
-        if let gid = sessionStore.activeGroupId,
-           let group = sessionStore.groups.first(where: { $0.id == gid }) {
-            base = base.filter { group.sessionIds.contains($0.id) || $0.id == sessionStore.activeSessionId }
-        }
         if sessionStore.hideSleepingTabs {
-            return base.filter { !$0.isSleeping || $0.id == sessionStore.activeSessionId }
+            return sessionStore.sessions.filter { !$0.isSleeping || $0.id == sessionStore.activeSessionId }
         }
-        return base
+        return sessionStore.sessions
     }
 
     var body: some View {
@@ -184,9 +177,21 @@ struct SessionTab: View {
     @State private var renameText = ""
     @State private var latestCheckpoint: Checkpoint?
     @State private var showRestoreConfirmation = false
+    @State private var showSleepOthersConfirmation = false
+    @State private var showCloseConfirmation = false
     @FocusState private var renameFieldFocused: Bool
 
     private var name: String { session.projectName }
+
+    /// Closing destroys the terminal and loses running work. Only nag when the
+    /// tab is actually busy; idle tabs close immediately to avoid friction.
+    private func requestClose() {
+        if terminalStatus == .working || terminalStatus == .waitingForInput {
+            showCloseConfirmation = true
+        } else {
+            onClose()
+        }
+    }
 
     private func startRename() {
         renameText = name
@@ -207,22 +212,6 @@ struct SessionTab: View {
     private func cancelRename() {
         isRenaming = false
         renameText = name
-    }
-
-    /// Modal text prompt for naming/renaming a group. Returns nil on cancel or
-    /// empty input. Shared by the tab context menu and the group dropdown.
-    static func promptForName(title: String, initial: String) -> String? {
-        let alert = NSAlert()
-        alert.messageText = title
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
-        field.stringValue = initial
-        alert.accessoryView = field
-        alert.addButton(withTitle: L10n.shared.save)
-        alert.addButton(withTitle: L10n.shared.cancel)
-        alert.window.initialFirstResponder = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-        let trimmed = field.stringValue.trimmingCharacters(in: .whitespaces)
-        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func showHistory() {
@@ -299,7 +288,7 @@ struct SessionTab: View {
             }
 
             if isHovering {
-                Button(action: onClose) {
+                Button(action: requestClose) {
                     NotchyIcon(kind: .close, size: 9)
                         .foregroundStyle(DS.Color.textTertiary)
                         .frame(width: 14, height: 14)
@@ -335,8 +324,10 @@ struct SessionTab: View {
                     .transition(.opacity)
             }
         }
+        .opacity(session.isSleeping ? 0.5 : 1.0)
         .animation(DS.Motion.swift, value: isHovering)
         .animation(DS.Motion.snap, value: isActive)
+        .animation(DS.Motion.snap, value: session.isSleeping)
         .onHover { hovering in
             isHovering = hovering
             if hovering {
@@ -377,26 +368,6 @@ struct SessionTab: View {
 
             Divider()
 
-            Menu(L10n.shared.moveToGroup) {
-                Button(L10n.shared.noGroup) {
-                    SessionStore.shared.assignSession(session.id, toGroup: nil)
-                }
-                ForEach(SessionStore.shared.groups) { group in
-                    Button(group.name) {
-                        SessionStore.shared.assignSession(session.id, toGroup: group.id)
-                    }
-                }
-                Divider()
-                Button(L10n.shared.newGroup) {
-                    if let name = SessionTab.promptForName(title: L10n.shared.newGroupNamePrompt, initial: "") {
-                        let id = SessionStore.shared.createGroup(name: name)
-                        SessionStore.shared.assignSession(session.id, toGroup: id)
-                    }
-                }
-            }
-
-            Divider()
-
             Button(L10n.shared.sessionHistory) {
                 showHistory()
             }
@@ -410,8 +381,9 @@ struct SessionTab: View {
             }
 
             if SessionStore.shared.sessions.count > 1 {
-                Button(L10n.shared.sleepOthers) {
-                    SessionStore.shared.sleepInactiveTabs(except: session.id)
+                Divider()
+                Button(L10n.shared.sleepOthers, role: .destructive) {
+                    showSleepOthersConfirmation = true
                 }
             }
 
@@ -426,7 +398,7 @@ struct SessionTab: View {
             }
 
             Button(L10n.shared.close, role: .destructive) {
-                onClose()
+                requestClose()
             }
         }
         .onAppear {
@@ -453,11 +425,32 @@ struct SessionTab: View {
         } message: {
             Text(L10n.shared.restoreCheckpointMessage)
         }
+        .alert(L10n.shared.sleepOthersConfirm, isPresented: $showSleepOthersConfirmation) {
+            Button(L10n.shared.sleepOthers, role: .destructive) {
+                SessionStore.shared.sleepInactiveTabs(except: session.id)
+            }
+            Button(L10n.shared.cancel, role: .cancel) {}
+        } message: {
+            let n = SessionStore.shared.sessions.filter { !$0.isSleeping && $0.id != session.id }.count
+            Text(L10n.shared.sleepOthersConfirmMessage(n))
+        }
+        .alert(L10n.shared.closeTabConfirm, isPresented: $showCloseConfirmation) {
+            Button(L10n.shared.close, role: .destructive) { onClose() }
+            Button(L10n.shared.cancel, role: .cancel) {}
+        } message: {
+            Text(L10n.shared.closeTabConfirmMessage)
+        }
         .onChange(of: isRenaming) {
-            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation
+            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation
         }
         .onChange(of: showRestoreConfirmation) {
-            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation
+            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation
+        }
+        .onChange(of: showSleepOthersConfirmation) {
+            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation
+        }
+        .onChange(of: showCloseConfirmation) {
+            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation
         }
         .onChange(of: renameFieldFocused) {
             if !renameFieldFocused && isRenaming {

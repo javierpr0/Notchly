@@ -55,69 +55,6 @@ struct PanelContentView: View {
         (!sessionStore.isWindowFocused && sessionStore.isTerminalExpanded) ? 0.5 : 1.0
     }
 
-    private var currentGroupName: String {
-        if let gid = sessionStore.activeGroupId,
-           let group = sessionStore.groups.first(where: { $0.id == gid }) {
-            return group.name
-        }
-        return L10n.shared.allGroups
-    }
-
-    @ViewBuilder
-    private var groupMenu: some View {
-        Menu {
-            Button { sessionStore.selectGroup(nil) } label: {
-                if sessionStore.activeGroupId == nil {
-                    Label(L10n.shared.allGroups, systemImage: "checkmark")
-                } else {
-                    Text(L10n.shared.allGroups)
-                }
-            }
-            ForEach(sessionStore.groups) { group in
-                Button { sessionStore.selectGroup(group.id) } label: {
-                    if sessionStore.activeGroupId == group.id {
-                        Label(group.name, systemImage: "checkmark")
-                    } else {
-                        Text(group.name)
-                    }
-                }
-            }
-            Divider()
-            Button(L10n.shared.newGroup) {
-                if let name = SessionTab.promptForName(title: L10n.shared.newGroupNamePrompt, initial: "") {
-                    let id = sessionStore.createGroup(name: name)
-                    sessionStore.selectGroup(id)
-                }
-            }
-            if let gid = sessionStore.activeGroupId {
-                Button(L10n.shared.renameGroup) {
-                    if let name = SessionTab.promptForName(title: L10n.shared.newGroupNamePrompt, initial: currentGroupName) {
-                        sessionStore.renameGroup(gid, to: name)
-                    }
-                }
-                Button(L10n.shared.deleteGroup, role: .destructive) {
-                    sessionStore.deleteGroup(gid)
-                }
-            }
-        } label: {
-            HStack(spacing: 3) {
-                Image(systemName: "square.grid.2x2")
-                    .font(.system(size: 11, weight: .medium))
-                if sessionStore.activeGroupId != nil {
-                    Text(currentGroupName)
-                        .font(DS.Font.caption)
-                        .lineLimit(1)
-                }
-            }
-            .dsChromeButton(isActive: sessionStore.activeGroupId != nil)
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .foregroundStyle(DS.Color.textPrimary.opacity(foregroundOpacity))
-        .help(L10n.shared.tabGroups)
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             // Top bar: tabs + controls
@@ -143,8 +80,6 @@ struct PanelContentView: View {
                     .popover(isPresented: $showSettings, arrowEdge: .bottom) {
                         settingsMenuContent
                     }
-
-                    groupMenu
                 }
 
                 WindowDragArea(onDoubleClick: {

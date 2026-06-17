@@ -110,6 +110,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             let controller = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
             try controller.updater.start()
             updaterController = controller
+            // Check on every launch; if an update exists Sparkle notifies the user
+            // and lets them choose when to install/relaunch (no silent auto-install,
+            // so running terminals are never yanked from under an active session).
+            // Scheduled checks otherwise only fire once the 24h interval lapses.
+            controller.updater.checkForUpdatesInBackground()
         } catch {
             NSLog("Sparkle updater failed to start: \(error)")
         }

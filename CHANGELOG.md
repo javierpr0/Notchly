@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Run a tab in an isolated git worktree: right-click a project tab and pick "Open in Worktree" to spin up a separate working copy of the repo on a fresh `notchly/…` branch, opened as its own tab. Several Claude sessions can now work the same project in parallel without fighting over one working tree. The tab shows a branch badge, and closing it asks whether to discard the worktree (and its branch) or keep it on disk.
 
+## [0.26.1] - 2026-06-19
+
 ### Fixed
 - Tabs no longer paint over the side controls when they outgrow the strip: once the tabs would run wider than the available space they scroll horizontally instead of overlapping the pin/settings buttons on the left and the Claude/new-tab buttons on the right. With few tabs they stay centered as before.
 
@@ -286,7 +288,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pin panel open option
 
 [Unreleased]: https://github.com/javierpr0/notchly/compare/v0.27.0...HEAD
-[0.27.0]: https://github.com/javierpr0/notchly/compare/v0.26.0...v0.27.0
+[0.27.0]: https://github.com/javierpr0/notchly/compare/v0.26.1...v0.27.0
+[0.26.1]: https://github.com/javierpr0/notchly/compare/v0.26.0...v0.26.1
 [0.26.0]: https://github.com/javierpr0/notchly/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/javierpr0/notchly/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/javierpr0/notchly/compare/v0.23.2...v0.24.0

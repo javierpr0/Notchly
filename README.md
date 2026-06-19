@@ -14,6 +14,7 @@ Based on [Notchy](https://github.com/adamlyttleapps/notchy) by Adam Lyttle.
 - **Tab reordering** — drag tabs or use Cmd+Shift+Arrow to reorder
 - **Live status in the notch** — animated pill shows whether Claude is working, waiting, or done
 - **Git checkpoints** — Cmd+S to snapshot your project before Claude makes changes
+- **Git worktrees** — open a tab in an isolated worktree to run parallel Claude sessions on the same repo without conflicts
 - **Terminal search** — Cmd+F to search through terminal output and scrollback
 - **Command palette** — Cmd+P to quickly run saved commands per directory
 - **Smart notifications** — macOS alerts with success/error detection when Claude finishes
@@ -96,6 +97,7 @@ Basado en [Notchy](https://github.com/adamlyttleapps/notchy) por Adam Lyttle.
 - **Reordenar pestanas** — arrastra pestanas o usa Cmd+Shift+Flecha
 - **Estado en vivo en el notch** — pastilla animada muestra si Claude esta trabajando, esperando o termino
 - **Puntos de control Git** — Cmd+S para hacer snapshot de tu proyecto antes de que Claude haga cambios
+- **Worktrees de Git** — abre una pestana en un worktree aislado para correr sesiones de Claude en paralelo sobre el mismo repo sin conflictos
 - **Busqueda en terminal** — Cmd+F para buscar en el output y scrollback
 - **Paleta de comandos** — Cmd+P para ejecutar comandos guardados por directorio
 - **Notificaciones inteligentes** — alertas de macOS con deteccion de exito/error

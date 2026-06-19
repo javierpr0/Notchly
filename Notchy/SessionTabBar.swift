@@ -41,12 +41,15 @@ struct SessionTabBar: View {
                     foregroundOpacity: sessionStore.isWindowFocused ? 1.0 : 0.6,
                     canMoveLeft: (index ?? 0) > 0,
                     canMoveRight: (index ?? 0) < sessionStore.sessions.count - 1,
+                    isWorktree: session.isWorktree,
+                    worktreeBranch: session.worktreeBranch,
                     onSelect: {
                         if draggingSessionId == nil {
                             sessionStore.selectSession(session.id)
                         }
                     },
                     onClose: { sessionStore.closeSession(session.id) },
+                    onDiscardWorktree: { sessionStore.closeSession(session.id, discardWorktree: true) },
                     onRename: { newName in
                         sessionStore.renameSession(session.id, to: newName)
                     },
@@ -166,8 +169,11 @@ struct SessionTab: View {
     var foregroundOpacity: Double = 1.0
     var canMoveLeft: Bool = false
     var canMoveRight: Bool = false
+    var isWorktree: Bool = false
+    var worktreeBranch: String? = nil
     let onSelect: () -> Void
     let onClose: () -> Void
+    var onDiscardWorktree: (() -> Void)?
     let onRename: (String) -> Void
     var onMoveLeft: (() -> Void)?
     var onMoveRight: (() -> Void)?
@@ -179,6 +185,7 @@ struct SessionTab: View {
     @State private var showRestoreConfirmation = false
     @State private var showSleepOthersConfirmation = false
     @State private var showCloseConfirmation = false
+    @State private var showWorktreeCloseConfirmation = false
     @FocusState private var renameFieldFocused: Bool
 
     private var name: String { session.projectName }
@@ -186,7 +193,9 @@ struct SessionTab: View {
     /// Closing destroys the terminal and loses running work. Only nag when the
     /// tab is actually busy; idle tabs close immediately to avoid friction.
     private func requestClose() {
-        if terminalStatus == .working || terminalStatus == .waitingForInput {
+        if isWorktree {
+            showWorktreeCloseConfirmation = true
+        } else if terminalStatus == .working || terminalStatus == .waitingForInput {
             showCloseConfirmation = true
         } else {
             onClose()
@@ -287,6 +296,13 @@ struct SessionTab: View {
                 }
             }
 
+            if isWorktree {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(DS.Color.textTertiary)
+                    .help(worktreeBranch ?? "")
+            }
+
             if isHovering {
                 Button(action: requestClose) {
                     NotchyIcon(kind: .close, size: 9)
@@ -350,6 +366,10 @@ struct SessionTab: View {
                     Button(L10n.shared.restoreLastCheckpointMenu) {
                         showRestoreConfirmation = true
                     }
+                }
+
+                Button(L10n.shared.openInWorktree) {
+                    SessionStore.shared.createWorktreeSession(from: session.id)
                 }
 
                 Divider()
@@ -448,17 +468,27 @@ struct SessionTab: View {
         } message: {
             Text(L10n.shared.closeTabConfirmMessage)
         }
+        .alert(L10n.shared.closeWorktreeTitle, isPresented: $showWorktreeCloseConfirmation) {
+            Button(L10n.shared.discardWorktree, role: .destructive) { onDiscardWorktree?() }
+            Button(L10n.shared.keepWorktree) { onClose() }
+            Button(L10n.shared.cancel, role: .cancel) {}
+        } message: {
+            Text(L10n.shared.closeWorktreeMessage(worktreeBranch ?? ""))
+        }
         .onChange(of: isRenaming) {
-            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation
+            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation || showWorktreeCloseConfirmation
         }
         .onChange(of: showRestoreConfirmation) {
-            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation
+            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation || showWorktreeCloseConfirmation
         }
         .onChange(of: showSleepOthersConfirmation) {
-            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation
+            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation || showWorktreeCloseConfirmation
         }
         .onChange(of: showCloseConfirmation) {
-            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation
+            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation || showWorktreeCloseConfirmation
+        }
+        .onChange(of: showWorktreeCloseConfirmation) {
+            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation || showWorktreeCloseConfirmation
         }
         .onChange(of: renameFieldFocused) {
             if !renameFieldFocused && isRenaming {

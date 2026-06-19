@@ -43,6 +43,13 @@ struct TerminalSession: Identifiable {
     /// suppressed. Persisted so the preference survives restarts.
     var notificationsMuted: Bool = false
 
+    /// Set when this tab runs inside a Notchly-created git worktree.
+    /// `worktreeBranch` is the branch checked out there; `worktreeRepoRoot` is
+    /// the main repo it was forked from (needed to remove the worktree on close).
+    var worktreeBranch: String?
+    var worktreeRepoRoot: String?
+    var isWorktree: Bool { worktreeBranch != nil && worktreeRepoRoot != nil }
+
     /// Aggregate status across all panes
     var terminalStatus: TerminalStatus {
         if isSleeping { return .sleeping }
@@ -58,7 +65,7 @@ struct TerminalSession: Identifiable {
     /// Custom command to run instead of auto-detecting claude
     var customCommand: String?
 
-    init(projectName: String, projectPath: String? = nil, workingDirectory: String? = nil, started: Bool = false, customCommand: String? = nil) {
+    init(projectName: String, projectPath: String? = nil, workingDirectory: String? = nil, started: Bool = false, customCommand: String? = nil, worktreeBranch: String? = nil, worktreeRepoRoot: String? = nil) {
         self.id = UUID()
         self.projectName = projectName
         self.projectPath = projectPath
@@ -69,6 +76,8 @@ struct TerminalSession: Identifiable {
         self.hasBeenSelected = started
         self.createdAt = Date()
         self.customCommand = customCommand
+        self.worktreeBranch = worktreeBranch
+        self.worktreeRepoRoot = worktreeRepoRoot
 
         let paneId = UUID()
         self.splitRoot = .pane(id: paneId, workingDirectory: dir)
@@ -87,6 +96,8 @@ struct TerminalSession: Identifiable {
         self.createdAt = Date()
         self.isSleeping = persisted.isSleeping ?? false
         self.notificationsMuted = persisted.notificationsMuted ?? false
+        self.worktreeBranch = persisted.worktreeBranch
+        self.worktreeRepoRoot = persisted.worktreeRepoRoot
 
         if let root = persisted.splitRoot {
             self.splitRoot = root
@@ -111,4 +122,6 @@ struct PersistedSession: Codable {
     let focusedPaneId: UUID?
     let isSleeping: Bool?
     let notificationsMuted: Bool?
+    let worktreeBranch: String?
+    let worktreeRepoRoot: String?
 }

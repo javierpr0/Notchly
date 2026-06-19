@@ -106,6 +106,16 @@ final class L10n {
     var closeTabConfirmMessage: String { isSpanish ? "Esta pestaña está trabajando. Cerrarla termina su terminal y se pierde lo que esté ejecutando." : "This tab is busy. Closing it ends its terminal and any running work is lost." }
     var restore: String { isSpanish ? "Restaurar" : "Restore" }
     var duplicateTab: String { isSpanish ? "Duplicar pestaña" : "Duplicate Tab" }
+    var openInWorktree: String { isSpanish ? "Abrir en worktree" : "Open in Worktree" }
+    var closeWorktreeTitle: String { isSpanish ? "Cerrar worktree" : "Close Worktree" }
+    var discardWorktree: String { isSpanish ? "Descartar worktree" : "Discard Worktree" }
+    var keepWorktree: String { isSpanish ? "Conservar" : "Keep" }
+    func closeWorktreeMessage(_ branch: String) -> String {
+        if isSpanish {
+            return "Esta pestaña es un worktree (rama \(branch)). Descártalo para borrar el worktree y su rama, o consérvalo para mantener la rama en disco."
+        }
+        return "This tab is a worktree (branch \(branch)). Discard it to delete the worktree and its branch, or keep it to leave the branch on disk."
+    }
     var muteNotifications: String { isSpanish ? "Silenciar notificaciones" : "Mute Notifications" }
     var unmuteNotifications: String { isSpanish ? "Activar notificaciones" : "Unmute Notifications" }
     var dropToOpen: String { isSpanish ? "Suelta para abrir una terminal aquí" : "Drop to open a terminal here" }

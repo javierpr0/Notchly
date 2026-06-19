@@ -181,7 +181,9 @@ class SessionStore {
                 workingDirectory: $0.workingDirectory,
                 splitRoot: $0.splitRoot, focusedPaneId: $0.focusedPaneId,
                 isSleeping: $0.isSleeping ? true : nil,
-                notificationsMuted: $0.notificationsMuted ? true : nil
+                notificationsMuted: $0.notificationsMuted ? true : nil,
+                worktreeBranch: $0.worktreeBranch,
+                worktreeRepoRoot: $0.worktreeRepoRoot
             )
         }
         do {
@@ -322,6 +324,35 @@ class SessionStore {
         sessions.insert(dup, at: insertAt)
         activeSessionId = dup.id
         persistSessions()
+    }
+
+    /// Opens a sibling tab running in a fresh git worktree of the given tab's
+    /// repo, so another Claude can work the same project in parallel without
+    /// touching the original working tree. No-op (logged) if it isn't a git repo.
+    @discardableResult
+    func createWorktreeSession(from id: UUID) -> Bool {
+        guard let src = sessions.first(where: { $0.id == id }) else { return false }
+        let dir = src.projectPath ?? src.workingDirectory
+        let handle: WorktreeHandle
+        do {
+            handle = try WorktreeManager.shared.createWorktree(forRepoAt: dir, name: src.projectName)
+        } catch {
+            logger.error("Worktree creation failed: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+        let session = TerminalSession(
+            projectName: src.projectName,
+            projectPath: handle.path,
+            workingDirectory: handle.path,
+            started: true,
+            worktreeBranch: handle.branch,
+            worktreeRepoRoot: handle.repoRoot
+        )
+        let insertAt = (sessions.firstIndex(where: { $0.id == id }) ?? sessions.count - 1) + 1
+        sessions.insert(session, at: insertAt)
+        activeSessionId = session.id
+        persistSessions()
+        return true
     }
 
     func toggleNotifications(_ id: UUID) {
@@ -624,7 +655,14 @@ class SessionStore {
         sessions.filter { $0.isSleeping }.count
     }
 
-    func closeSession(_ id: UUID) {
+    /// Closes a tab. When `discardWorktree` is true and the tab is a worktree,
+    /// its git worktree and branch are deleted; otherwise they're left on disk.
+    func closeSession(_ id: UUID, discardWorktree: Bool = false) {
+        if discardWorktree,
+           let s = sessions.first(where: { $0.id == id }),
+           let branch = s.worktreeBranch, let root = s.worktreeRepoRoot {
+            WorktreeManager.shared.discardWorktree(repoRoot: root, path: s.workingDirectory, branch: branch)
+        }
         if let session = sessions.first(where: { $0.id == id }) {
             for paneId in session.splitRoot.allPaneIds {
                 TerminalManager.shared.destroyTerminal(for: paneId)

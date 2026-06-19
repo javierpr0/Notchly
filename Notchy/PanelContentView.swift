@@ -103,8 +103,16 @@ struct PanelContentView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 28)
                 .overlay(alignment: .center) {
-                    SessionTabBar(sessionStore: sessionStore)
-                        .allowsHitTesting(true)
+                    // Centered + hugging while tabs fit; falls back to a
+                    // horizontal scroller once they'd overflow so they never
+                    // paint over the side control clusters.
+                    ViewThatFits(in: .horizontal) {
+                        SessionTabBar(sessionStore: sessionStore)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            SessionTabBar(sessionStore: sessionStore)
+                        }
+                    }
+                    .allowsHitTesting(true)
                 }
 
                 HStack(spacing: DS.Spacing.xxs) {

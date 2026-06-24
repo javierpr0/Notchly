@@ -38,6 +38,7 @@ final class L10n {
 
     var showInNotch: String { isSpanish ? "Mostrar en notch..." : "Show in notch..." }
     var viewAction: String { isSpanish ? "Ver" : "View" }
+    var continueAction: String { isSpanish ? "Continuar" : "Continue" }
     var newSession: String { isSpanish ? "Nueva sesión" : "New Session" }
     var checkpoint: String { isSpanish ? "Punto de control" : "Checkpoint" }
     var save: String { isSpanish ? "Guardar..." : "Save..." }

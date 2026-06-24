@@ -30,3 +30,5 @@ build-release/
 
 # Internal dev docs (not for public repo)
 docs/CAPABILITIES.md
+
+tasks/

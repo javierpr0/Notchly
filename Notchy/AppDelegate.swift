@@ -5,7 +5,7 @@ import UserNotifications
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
-    private let statusItem: NSStatusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private let statusItem: NSStatusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private lazy var panel: TerminalPanel = TerminalPanel(sessionStore: sessionStore)
     private var notchWindow: NotchWindow?
     private let sessionStore = SessionStore.shared
@@ -61,6 +61,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             self,
             selector: #selector(handleCheckForUpdates),
             name: .NotchyCheckForUpdates,
+            object: nil
+        )
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(updateStatusItemTitle),
+            name: .NotchyNotchStatusChanged,
             object: nil
         )
     }
@@ -127,7 +134,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             button.target = self
             button.action = #selector(statusItemClicked(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            button.imagePosition = .imageLeading
         }
+    }
+
+    /// Shows the number of sessions actively working next to the menu bar icon
+    /// (blank when none). Driven by `.NotchyNotchStatusChanged`.
+    @objc private func updateStatusItemTitle() {
+        guard let button = statusItem.button else { return }
+        let count = sessionStore.sessions.filter { $0.terminalStatus == .working }.count
+        button.title = count > 0 ? " \(count)" : ""
     }
 
     private func setupPanel() {
@@ -455,7 +471,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             intentIdentifiers: [],
             options: []
         )
-        center.setNotificationCategories([category])
+        // "Needs input" notifications also offer Continue, which approves the
+        // prompt in place (no .foreground → app stays in background).
+        let continueAction = UNNotificationAction(
+            identifier: "CONTINUE",
+            title: L10n.shared.continueAction,
+            options: []
+        )
+        let waitingCategory = UNNotificationCategory(
+            identifier: AppNotification.sessionWaitingCategory,
+            actions: [continueAction, view],
+            intentIdentifiers: [],
+            options: []
+        )
+        center.setNotificationCategories([category, waitingCategory])
     }
 
     /// Tapping the notification (or its "View" action) brings Notchly forward
@@ -464,13 +493,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let userInfo = response.notification.request.content.userInfo
-        if let idString = userInfo[AppNotification.sessionIdKey] as? String,
-           let id = UUID(uuidString: idString) {
+        guard let idString = userInfo[AppNotification.sessionIdKey] as? String,
+              let id = UUID(uuidString: idString) else {
+            completionHandler()
+            return
+        }
+        if response.actionIdentifier == "CONTINUE" {
             DispatchQueue.main.async { [weak self] in
-                NSApp.activate(ignoringOtherApps: true)
-                self?.sessionStore.selectSession(id)
-                self?.showPanelBelowStatusItem()
+                self?.sessionStore.approveWaitingPane(id)
             }
+            completionHandler()
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            NSApp.activate(ignoringOtherApps: true)
+            self?.sessionStore.selectSession(id)
+            self?.showPanelBelowStatusItem()
         }
         completionHandler()
     }

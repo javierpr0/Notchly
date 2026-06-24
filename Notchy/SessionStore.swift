@@ -10,6 +10,9 @@ private let logger = Logger(subsystem: "com.notchly", category: "SessionStore")
 /// back to a specific session (registered in AppDelegate, set in SessionStore).
 enum AppNotification {
     static let sessionCategory = "NOTCHY_SESSION"
+    /// Category for "needs input" notifications — carries a Continue action that
+    /// sends Enter to the waiting pane without bringing the app forward.
+    static let sessionWaitingCategory = "NOTCHY_SESSION_WAITING"
     static let sessionIdKey = "sessionId"
 }
 
@@ -109,18 +112,28 @@ class SessionStore {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
-    private func sendNotification(title: String, body: String, sessionId: UUID?) {
+    private func sendNotification(title: String, body: String, sessionId: UUID?, canContinue: Bool = false) {
         guard !isWindowFocused else { return }
         if let sessionId, sessions.first(where: { $0.id == sessionId })?.notificationsMuted == true { return }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         if let sessionId {
-            content.categoryIdentifier = AppNotification.sessionCategory
+            content.categoryIdentifier = canContinue ? AppNotification.sessionWaitingCategory : AppNotification.sessionCategory
             content.userInfo = [AppNotification.sessionIdKey: sessionId.uuidString]
         }
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
+    }
+
+    /// Sends Enter to the pane currently waiting for input — accepts the
+    /// highlighted choice in Claude's permission prompt. Invoked from the
+    /// notification's Continue action.
+    func approveWaitingPane(_ sessionId: UUID) {
+        guard let session = sessions.first(where: { $0.id == sessionId }),
+              let paneId = session.paneStatuses.first(where: { $0.value == .waitingForInput })?.key
+        else { return }
+        TerminalManager.shared.sendCommand(to: paneId, command: "")
     }
 
     // MARK: - Session Persistence
@@ -407,7 +420,7 @@ class SessionStore {
             let sessionName = sessions[index].projectName
             if newAggregate == .waitingForInput && previousAggregate != .waitingForInput {
                 playSound(named: "waitingForInput")
-                sendNotification(title: L10n.shared.actionRequired, body: L10n.shared.needsInput(sessionName), sessionId: sessionId)
+                sendNotification(title: L10n.shared.actionRequired, body: L10n.shared.needsInput(sessionName), sessionId: sessionId, canContinue: true)
                 if isPinned && !isTerminalExpanded && sessionId == activeSessionId {
                     isTerminalExpanded = true
                     NotificationCenter.default.post(name: .NotchyExpandPanel, object: nil)

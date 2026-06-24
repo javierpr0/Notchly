@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-06-23
+
+### Added
+- The menu bar icon now shows how many sessions are actively working: a count appears next to the icon while one or more Claude sessions are running and clears once everything goes idle, so you can tell at a glance whether work is still in progress without opening the panel.
+- Approve a permission prompt straight from the notification: the "needs input" notification now has a **Continue** button that sends Enter to the waiting session — accepting Claude's highlighted choice — without bringing the app forward.
+
 ## [0.27.0] - 2026-06-19
 
 ### Added
@@ -287,7 +293,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global backtick hotkey to toggle panel
 - Pin panel open option
 
-[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/javierpr0/notchly/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/javierpr0/notchly/compare/v0.26.1...v0.27.0
 [0.26.1]: https://github.com/javierpr0/notchly/compare/v0.26.0...v0.26.1
 [0.26.0]: https://github.com/javierpr0/notchly/compare/v0.25.0...v0.26.0

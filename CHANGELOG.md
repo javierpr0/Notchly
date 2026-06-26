@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.3] - 2026-06-25
+
 ### Changed
 - Autocomplete (ghost text) now only runs for the terminal pane that has keyboard focus instead of every open session, so background tabs streaming output no longer schedule debounce timers or scan their buffers for suggestions nobody sees — noticeably less CPU work with many tabs open.
 
@@ -306,7 +308,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global backtick hotkey to toggle panel
 - Pin panel open option
 
-[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.28.2...HEAD
+[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.28.3...HEAD
+[0.28.3]: https://github.com/javierpr0/notchly/compare/v0.28.2...v0.28.3
 [0.28.2]: https://github.com/javierpr0/notchly/compare/v0.28.1...v0.28.2
 [0.28.1]: https://github.com/javierpr0/notchly/compare/v0.28.0...v0.28.1
 [0.28.0]: https://github.com/javierpr0/notchly/compare/v0.27.0...v0.28.0

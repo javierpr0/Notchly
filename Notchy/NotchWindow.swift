@@ -172,7 +172,7 @@ class NotchWindow: NSPanel {
         guard let screen = NSScreen.builtIn else { return }
         let screenFrame = screen.frame
 
-        let targetWidth: CGFloat = notchWidth + 80
+        let targetWidth: CGFloat = notchWidth + 50
         var targetFrame = NSRect(
             x: screenFrame.midX - targetWidth / 2,
             y: screenFrame.maxY - notchHeight,
@@ -380,7 +380,7 @@ class NotchWindow: NSPanel {
         // Check the notch area itself
         guard let screen = NSScreen.builtIn else { return }
         let screenFrame = screen.frame
-        let effectiveWidth = isExpanded ? notchWidth + 80 : notchWidth
+        let effectiveWidth = isExpanded ? notchWidth + 50 : notchWidth
         let notchRect = NSRect(
             x: screenFrame.midX - effectiveWidth / 2,
             y: screenFrame.maxY - notchHeight,
@@ -443,7 +443,7 @@ class NotchWindow: NSPanel {
         pillContentHost?.rootView = NotchPillContent(isHovering: false)
         guard let screen = NSScreen.builtIn else { return }
         let screenFrame = screen.frame
-        let baseWidth = isExpanded ? notchWidth + 80 : notchWidth
+        let baseWidth = isExpanded ? notchWidth + 50 : notchWidth
         let targetFrame = NSRect(
             x: screenFrame.midX - baseWidth / 2,
             y: screenFrame.maxY - notchHeight,

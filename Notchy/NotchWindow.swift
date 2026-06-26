@@ -292,9 +292,10 @@ class NotchWindow: NSPanel {
             notchWidth = right.minX - left.maxX
             notchHeight = screen.frame.maxY - min(left.minY, right.minY)
         } else {
-            // No notch (external display, older Mac) — use sensible defaults
+            // No notch (external display, older Mac) — hug the pill content
+            // instead of a wide fixed bar with a big empty middle.
             let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
-            notchWidth = 180
+            notchWidth = 100
             notchHeight = max(menuBarHeight, 25)
         }
     }

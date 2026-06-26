@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Autocomplete (ghost text) now only runs for the terminal pane that has keyboard focus instead of every open session, so background tabs streaming output no longer schedule debounce timers or scan their buffers for suggestions nobody sees — noticeably less CPU work with many tabs open.
+
 ## [0.28.2] - 2026-06-25
 
 ### Changed

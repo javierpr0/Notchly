@@ -495,6 +495,10 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     }
 
     private func triggerAutocomplete() {
+        // Ghost text only renders in the pane that holds keyboard focus, so the
+        // many background terminals streaming output don't need to schedule a
+        // debounce timer or scan their buffer for suggestions nobody sees.
+        guard window?.firstResponder === self else { return }
         autocompleteDebounceTimer?.invalidate()
         autocompleteDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: false) { [weak self] _ in
             self?.evaluateAutocomplete()

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.2] - 2026-06-25
+
+### Changed
+- The notch pill's working (expanded) state is narrower: the extra width while a session is active dropped from +80px to +50px, so the busy pill (~150px) stays closer to the idle size.
+
 ## [0.28.1] - 2026-06-25
 
 ### Changed
@@ -298,7 +303,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global backtick hotkey to toggle panel
 - Pin panel open option
 
-[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.28.1...HEAD
+[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.28.2...HEAD
+[0.28.2]: https://github.com/javierpr0/notchly/compare/v0.28.1...v0.28.2
 [0.28.1]: https://github.com/javierpr0/notchly/compare/v0.28.0...v0.28.1
 [0.28.0]: https://github.com/javierpr0/notchly/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/javierpr0/notchly/compare/v0.26.1...v0.27.0

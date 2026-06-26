@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-06-25
+
+### Changed
+- The notch pill is narrower on displays without a physical notch: instead of a wide fixed bar with an empty middle, it now hugs its content (~100px) so the status face and indicators sit together. Macs with a real notch are unchanged — the pill still matches the notch exactly.
+
 ## [0.28.0] - 2026-06-23
 
 ### Added
@@ -293,7 +298,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global backtick hotkey to toggle panel
 - Pin panel open option
 
-[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.28.1...HEAD
+[0.28.1]: https://github.com/javierpr0/notchly/compare/v0.28.0...v0.28.1
 [0.28.0]: https://github.com/javierpr0/notchly/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/javierpr0/notchly/compare/v0.26.1...v0.27.0
 [0.26.1]: https://github.com/javierpr0/notchly/compare/v0.26.0...v0.26.1

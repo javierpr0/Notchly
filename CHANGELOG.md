@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.1] - 2026-07-02
+
+### Changed
+- Updates are no longer installed silently: Sparkle now notifies when a new version is available and waits for the user to approve it (`SUAllowsAutomaticUpdates` disabled), as a defense-in-depth measure against unexpected updates.
+- Update checks now run every 3 hours instead of once a day.
+
 ## [0.31.0] - 2026-07-02
 
 ### Fixed
@@ -342,6 +348,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pin panel open option
 
 [Unreleased]: https://github.com/javierpr0/notchly/compare/v0.28.3...HEAD
+[0.31.1]: https://github.com/javierpr0/notchly/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/javierpr0/notchly/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/javierpr0/notchly/compare/v0.29.1...v0.30.0
 [0.29.1]: https://github.com/javierpr0/notchly/compare/v0.29.0...v0.29.1

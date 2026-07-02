@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>SUAllowsAutomaticUpdates</key>
-	<true/>
+	<false/>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>
@@ -11,6 +11,6 @@
 	<key>SUPublicEDKey</key>
 	<string>3lkCN9Bs1CZ76Ea5bIFspmiuGrT2pQrPm4v83evOknc=</string>
 	<key>SUScheduledCheckInterval</key>
-	<integer>86400</integer>
+	<integer>10800</integer>
 </dict>
 </plist>

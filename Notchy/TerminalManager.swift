@@ -245,11 +245,15 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         guard let items = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] else {
             return false
         }
+        // Strip control bytes from each dropped path before it reaches the
+        // shell/Claude prompt — a filename may legally contain newline/CR/ESC
+        // on APFS, none of which quoting or space-escaping contains.
+        let safePaths = items.map { TerminalManager.stripControlCharacters($0.path) }
         if isRunningClaudeCode() {
-            let paths = items.map { "@" + $0.path.replacingOccurrences(of: " ", with: "\\ ") }.joined(separator: " ")
+            let paths = safePaths.map { "@" + $0.replacingOccurrences(of: " ", with: "\\ ") }.joined(separator: " ")
             send(txt: paths)
         } else {
-            let paths = items.map { "'" + $0.path.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ")
+            let paths = safePaths.map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ")
             send(txt: paths)
         }
         return true
@@ -1503,7 +1507,17 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
     }
 
     private func shellEscape(_ path: String) -> String {
-        "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        "'" + Self.stripControlCharacters(path).replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// Removes C0 control bytes (0x00–0x1F) and DEL (0x7F) from a string.
+    /// Single-quote escaping neutralizes shell metacharacters but NOT control
+    /// bytes: a newline/CR embedded in a path is delivered to the interactive
+    /// shell's line editor as an Enter keypress, and an ESC byte can inject a
+    /// terminal control sequence — neither is contained by quoting. Any path
+    /// that reaches `send(txt:)` must be stripped first.
+    static func stripControlCharacters(_ s: String) -> String {
+        String(s.unicodeScalars.filter { $0.value >= 0x20 && $0.value != 0x7F })
     }
 
     // MARK: - .notchy.json security gates
@@ -1517,7 +1531,11 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
     /// Env keys that influence process loading or critical paths — never let
     /// a project config override these.
     private static let blockedEnvKeys: Set<String> = [
-        "PATH", "SHELL", "HOME", "USER", "LOGNAME", "TMPDIR", "IFS"
+        "PATH", "SHELL", "HOME", "USER", "LOGNAME", "TMPDIR", "IFS",
+        // Shell startup-file hijacks: a login shell reads these BEFORE any
+        // command is typed, so allowing them turns a project's env config into
+        // arbitrary pre-execution (e.g. ZDOTDIR → $ZDOTDIR/.zshenv).
+        "ZDOTDIR", "BASH_ENV", "ENV"
     ]
     private static let blockedEnvPrefixes: [String] = ["DYLD_", "LD_"]
 

@@ -305,7 +305,11 @@ class SessionStore {
     /// panel). Treated as a project so the terminal auto-launches Claude when a
     /// CLAUDE.md is present, matching the normal project-open behavior.
     func createSession(forDirectory dir: String) {
-        let name = (dir as NSString).lastPathComponent
+        // A folder name is attacker-controllable (cloned repo, unzipped
+        // archive) and flows into notifications, the tab strip and menus.
+        // Strip bidi-override / zero-width / control codepoints so it can't
+        // spoof that UI (Trojan-Source style).
+        let name = ClickThroughTerminalView.sanitizeForDisplay((dir as NSString).lastPathComponent)
         let session = TerminalSession(
             projectName: name.isEmpty ? "Terminal" : name,
             projectPath: dir,
@@ -376,7 +380,7 @@ class SessionStore {
 
     func renameSession(_ id: UUID, to newName: String) {
         guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
-        sessions[index].projectName = newName
+        sessions[index].projectName = ClickThroughTerminalView.sanitizeForDisplay(newName)
         persistSessions()
     }
 

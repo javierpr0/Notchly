@@ -132,13 +132,26 @@ enum ProjectTrustStore {
     private static func trustPromptBody(for directory: String, config: ProjectConfig) -> String {
         var lines = ["Project: \(directory)"]
         if let shell = config.shell { lines.append("Shell: \(shell)") }
-        if let command = config.command { lines.append("Command: \(command)") }
+        if let command = config.command { lines.append("Command: \(truncateForDisplay(command))") }
         if let env = config.env, !env.isEmpty {
-            let preview = env.keys.sorted().prefix(5).joined(separator: ", ")
-            lines.append("Env: \(preview)\(env.count > 5 ? ", …" : "")")
+            // Show full key=value pairs, not just key names: an env value is
+            // where a hijack hides (e.g. a path pointing at a malicious rc
+            // file). Showing only keys let a dangerous value stay invisible.
+            lines.append("Env:")
+            for key in env.keys.sorted() {
+                lines.append("  \(key)=\(truncateForDisplay(env[key] ?? ""))")
+            }
         }
         lines.append("")
         lines.append("Untrusted .notchy.json files can run arbitrary code. Only trust projects you wrote or audited.")
         return lines.joined(separator: "\n")
+    }
+
+    /// Caps a single displayed field so a deliberately long value can't push
+    /// the rest of the dialog (and the security warning) off-screen.
+    private static func truncateForDisplay(_ s: String, limit: Int = 200) -> String {
+        let flattened = s.replacingOccurrences(of: "\n", with: "⏎")
+        guard flattened.count > limit else { return flattened }
+        return flattened.prefix(limit) + "… (+\(flattened.count - limit) chars)"
     }
 }

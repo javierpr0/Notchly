@@ -588,23 +588,6 @@ struct PanelContentView: View {
             .buttonStyle(.plain)
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
-
-            Button {
-                NotificationCenter.default.post(name: .NotchyShowTelegramSettings, object: nil)
-                showSettings = false
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "paperplane.circle")
-                        .font(.system(size: 12))
-                    Text(L10n.shared.telegram)
-                        .font(.system(size: 12))
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 4)
         }
         .padding(.vertical, 8)
         .frame(width: 240)

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-07-01
+
+### Removed
+- Telegram control (introduced in 0.29.0): removed entirely. The notifications lacked context about what Claude actually wanted to do, making remote approval too blind to be useful in practice.
+
 ## [0.29.1] - 2026-07-01
 
 ### Fixed
@@ -319,6 +324,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pin panel open option
 
 [Unreleased]: https://github.com/javierpr0/notchly/compare/v0.28.3...HEAD
+[0.30.0]: https://github.com/javierpr0/notchly/compare/v0.29.1...v0.30.0
 [0.29.1]: https://github.com/javierpr0/notchly/compare/v0.29.0...v0.29.1
 [0.29.0]: https://github.com/javierpr0/notchly/compare/v0.28.3...v0.29.0
 [0.28.3]: https://github.com/javierpr0/notchly/compare/v0.28.2...v0.28.3

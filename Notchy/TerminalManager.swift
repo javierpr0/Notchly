@@ -1471,14 +1471,6 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         terminal.send(txt: "\(command)\r")
     }
 
-    /// Writes raw bytes to a pane's stdin with no trailing return appended —
-    /// unlike `sendCommand`, needed for control bytes like Ctrl-C where a
-    /// trailing `\r` would be wrong.
-    func sendRaw(to paneId: UUID, text: String) {
-        guard let terminal = terminals[paneId] else { return }
-        terminal.send(txt: text)
-    }
-
     func focusTerminal(for paneId: UUID) {
         guard let terminal = terminals[paneId] else { return }
         terminal.window?.makeFirstResponder(terminal)

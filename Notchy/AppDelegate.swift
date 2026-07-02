@@ -18,7 +18,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     private var panelOpenedViaHover = false
     private let hoverMargin: CGFloat = 15
     private let hoverHideDelay: TimeInterval = 0.06
-    private var telegramSettingsWindow: NSWindow?
 
     private var replaceNotch: Bool {
         get {
@@ -34,7 +33,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         stopHoverTracking()
         sessionStore.saveSessions()
         UserDefaults.standard.synchronize()
-        TelegramService.shared.stop()
         if let monitor = hotkeyMonitor {
             NSEvent.removeMonitor(monitor)
             hotkeyMonitor = nil
@@ -53,7 +51,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         setupUpdater()
         observeUpdaterWindows()
         FullDiskAccessChecker.promptIfNeeded()
-        TelegramService.shared.startIfConfigured()
 
         // Spawn one idle shell in the background so the user's next "+" tab
         // (or the next session selection that needs a fresh terminal) skips
@@ -73,40 +70,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
             name: .NotchyNotchStatusChanged,
             object: nil
         )
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleShowTelegramSettings),
-            name: .NotchyShowTelegramSettings,
-            object: nil
-        )
-    }
-
-    /// Owns its own NSWindow rather than going through a SwiftUI `Settings`
-    /// scene — this app manages all real windows by hand (see TerminalPanel,
-    /// NotchWindow), and the Settings scene's window-creation/leveling
-    /// didn't reliably surface above the floating panel from this app's
-    /// non-standard (AppDelegate-driven, LSUIElement) launch path.
-    @objc private func handleShowTelegramSettings() {
-        if telegramSettingsWindow == nil {
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 420, height: 560),
-                styleMask: [.titled, .closable, .miniaturizable],
-                backing: .buffered,
-                defer: false
-            )
-            window.title = L10n.shared.telegram
-            window.contentView = NSHostingView(rootView: TelegramSettingsView())
-            window.isReleasedWhenClosed = false
-            window.center()
-            // .popUpMenu (101) is above .floating (3) — otherwise our own
-            // TerminalPanel would sit on top of this window and hide it.
-            window.level = .popUpMenu
-            window.collectionBehavior.insert(.moveToActiveSpace)
-            telegramSettingsWindow = window
-        }
-        NSApp.activate(ignoringOtherApps: true)
-        telegramSettingsWindow?.makeKeyAndOrderFront(nil)
     }
 
     /// Sparkle's update / progress / installed-version windows are plain
@@ -429,14 +392,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         updateItem.target = self
         updateItem.isEnabled = updaterController?.updater.canCheckForUpdates ?? false
         menu.addItem(updateItem)
-
-        let telegramItem = NSMenuItem(
-            title: L10n.shared.telegram,
-            action: #selector(handleShowTelegramSettings),
-            keyEquivalent: ""
-        )
-        telegramItem.target = self
-        menu.addItem(telegramItem)
 
         menu.addItem(.separator())
 

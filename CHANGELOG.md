@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-07-02
+
+### Fixed
+- The system could be prevented from sleeping indefinitely: the activity assertion that blocks idle sleep while a session is working was only released when a tab was put to sleep — not when a working tab was closed, restarted, or had its focused pane closed. Those paths now re-evaluate sleep prevention, so a leftover working tab no longer keeps the Mac awake.
+- Hover auto-hide could get permanently stuck: if the cursor briefly re-entered the notch/panel during the hide delay, the one-shot timer's reference was never cleared, blocking every future auto-hide until the app restarted. The panel now reliably hides when the cursor leaves.
+- Autocomplete defaults and zsh history only ever populated the first project directory opened in a session; every other directory silently had an empty suggestion store and took a synchronous disk read on the main thread the first time you typed there. Each directory is now seeded independently, and the zsh history file is read at most once.
+- The floating panel could open partly off-screen when the menu bar icon was near the right edge of the display. Its horizontal position is now clamped to the visible screen so the tabs and side buttons stay reachable.
+- Acting on a notification now clears the other stacked notifications for the same session instead of leaving stale duplicates in Notification Center.
+
+### Security
+- File and folder names are stripped of control bytes (newline, carriage return, escape) before their paths are sent to the terminal — a crafted name in a cloned repo or unzipped archive can no longer inject keystrokes or terminal escape sequences via drag-and-drop.
+- `.notchy.json` project configs can no longer set `ZDOTDIR`, `BASH_ENV`, or `ENV`, which a login shell reads before any command runs and which could otherwise turn a project's env config into pre-execution of arbitrary code. The trust dialog now shows full env key=value pairs (and truncates over-long fields) instead of just key names, so a hidden value can't slip past.
+- Project (folder) names are sanitized of bidi-override and zero-width characters before appearing in notifications, tabs, and menus, closing a Trojan-Source-style UI spoofing vector.
+
+### Performance
+- The tab strip no longer does an O(n) index lookup per tab on every render (previously O(n²), re-run on each status update); it builds the lookup once.
+- Resolving the built-in (notch) display is now cached and only refreshed on a screen-configuration change, instead of being recomputed on every mouse move and every 10 Hz proximity tick.
+
 ## [0.30.0] - 2026-07-01
 
 ### Removed
@@ -324,6 +342,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pin panel open option
 
 [Unreleased]: https://github.com/javierpr0/notchly/compare/v0.28.3...HEAD
+[0.31.0]: https://github.com/javierpr0/notchly/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/javierpr0/notchly/compare/v0.29.1...v0.30.0
 [0.29.1]: https://github.com/javierpr0/notchly/compare/v0.29.0...v0.29.1
 [0.29.0]: https://github.com/javierpr0/notchly/compare/v0.28.3...v0.29.0

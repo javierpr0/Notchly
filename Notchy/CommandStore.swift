@@ -26,7 +26,17 @@ class CommandStore {
     private let queue = DispatchQueue(label: "com.notchly.CommandStore")
     private var cache: [String: [StoredCommand]] = [:]
     private var cacheAccessOrder: [String] = [] // LRU: most-recently used at end
-    private var historyImported = false
+    // Per-directory seeding state (all mutated only on `queue`). The previous
+    // single `historyImported` Bool meant only the FIRST directory opened in
+    // the process ever got the default commands + zsh history seeded — every
+    // other directory silently had an empty autocomplete store AND took a
+    // synchronous cache-miss disk read on the main thread. Now each directory
+    // is seeded once; the user's zsh history is read from disk at most once
+    // and cached.
+    private var seededDirectories: Set<String> = []
+    private var zshHistory: [String]?
+    private var zshLoadStarted = false
+    private var pendingSeedDirs: [String] = []
     private var terminateObserver: NSObjectProtocol?
     private var resignActiveObserver: NSObjectProtocol?
 
@@ -114,40 +124,59 @@ class CommandStore {
 
     func importHistoryIfNeeded(for directory: String) {
         queue.async { [weak self] in
-            guard let self else { return }
-            guard !self.historyImported else { return }
-            self.historyImported = true
+            guard let self, !self.seededDirectories.contains(directory) else { return }
+            self.seededDirectories.insert(directory)
 
-            // Read zsh history off the serial queue (it's slow I/O).
+            // zsh history already loaded → seed this directory immediately.
+            if let history = self.zshHistory {
+                self.seedDirectory(directory, zshHistory: history)
+                return
+            }
+
+            // Otherwise queue this directory and kick off the (one-time) zsh
+            // read. Concurrent directories opened before the read finishes all
+            // wait in `pendingSeedDirs` and get seeded together.
+            self.pendingSeedDirs.append(directory)
+            guard !self.zshLoadStarted else { return }
+            self.zshLoadStarted = true
+
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 guard let self else { return }
-                let historyCommands = self.readZshHistory()
-
-                // Merge back on the serial queue against a FRESH snapshot of cmds,
-                // so commands recorded via recordCommand() while we were reading
-                // zsh history are preserved (they hit the serial queue first).
+                let history = self.readZshHistory()
                 self.queue.async { [weak self] in
                     guard let self else { return }
-                    var cmds = self._commands(for: directory)
-                    var seen = Set(cmds.map(\.text))
-
-                    if cmds.isEmpty {
-                        for cmd in Self.defaultCommands where !seen.contains(cmd) {
-                            cmds.append(StoredCommand(text: cmd, count: 1, lastUsed: Date.distantPast))
-                            seen.insert(cmd)
-                        }
+                    self.zshHistory = history
+                    let pending = self.pendingSeedDirs
+                    self.pendingSeedDirs = []
+                    for dir in pending {
+                        self.seedDirectory(dir, zshHistory: history)
                     }
-
-                    for cmd in historyCommands where !seen.contains(cmd) {
-                        cmds.append(StoredCommand(text: cmd, count: 1, lastUsed: Date.distantPast))
-                        seen.insert(cmd)
-                    }
-
-                    self.updateCache(directory: directory, commands: cmds)
-                    self.saveCommands(cmds, for: directory)
                 }
             }
         }
+    }
+
+    /// Seeds a directory's command store with the built-in defaults (only when
+    /// it has no saved commands yet) plus the user's zsh history. Must run on
+    /// `queue`; reads a FRESH snapshot so commands recorded meanwhile survive.
+    private func seedDirectory(_ directory: String, zshHistory: [String]) {
+        var cmds = _commands(for: directory)
+        var seen = Set(cmds.map(\.text))
+
+        if cmds.isEmpty {
+            for cmd in Self.defaultCommands where !seen.contains(cmd) {
+                cmds.append(StoredCommand(text: cmd, count: 1, lastUsed: Date.distantPast))
+                seen.insert(cmd)
+            }
+        }
+
+        for cmd in zshHistory where !seen.contains(cmd) {
+            cmds.append(StoredCommand(text: cmd, count: 1, lastUsed: Date.distantPast))
+            seen.insert(cmd)
+        }
+
+        updateCache(directory: directory, commands: cmds)
+        saveCommands(cmds, for: directory)
     }
 
     // MARK: - Private (call only from within queue)

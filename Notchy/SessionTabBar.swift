@@ -29,9 +29,17 @@ struct SessionTabBar: View {
     }
 
     var body: some View {
-        HStack(spacing: DS.Spacing.xxs) {
+        // One pass to map id→index instead of an O(n) firstIndex per tab
+        // (which made the whole strip O(n²), re-run on every status tick that
+        // reassigns the sessions array).
+        let indexById = Dictionary(
+            sessionStore.sessions.enumerated().map { ($1.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let lastIndex = sessionStore.sessions.count - 1
+        return HStack(spacing: DS.Spacing.xxs) {
             ForEach(visibleSessions) { session in
-                let index = sessionStore.sessions.firstIndex(where: { $0.id == session.id })
+                let index = indexById[session.id]
                 SessionTab(
                     session: session,
                     isActive: session.id == sessionStore.activeSessionId,
@@ -40,7 +48,7 @@ struct SessionTabBar: View {
                     terminalStatus: session.terminalStatus,
                     foregroundOpacity: sessionStore.isWindowFocused ? 1.0 : 0.6,
                     canMoveLeft: (index ?? 0) > 0,
-                    canMoveRight: (index ?? 0) < sessionStore.sessions.count - 1,
+                    canMoveRight: (index ?? 0) < lastIndex,
                     isWorktree: session.isWorktree,
                     worktreeBranch: session.worktreeBranch,
                     onSelect: {

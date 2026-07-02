@@ -9,6 +9,11 @@ class NotchWindow: NSPanel {
     private var screenObserver: Any?
     private var statusObserver: Any?
     private var hoverPollTimer: Timer?
+    /// Cached result of `NSScreen.builtIn` — resolving it scans every screen and
+    /// calls `CGDisplayIsBuiltin` per display, too expensive to redo on every
+    /// mouse-move and every 10Hz proximity tick. Refreshed only when the screen
+    /// configuration actually changes (see `observeScreenChanges`).
+    private var cachedBuiltInScreen: NSScreen?
     private var currentDisplayLink: CVDisplayLinkWrapper?
     var onHover: (() -> Void)?
     /// Additional rects (in screen coordinates) that should also trigger hover.
@@ -352,8 +357,15 @@ class NotchWindow: NSPanel {
         }
     }
 
+    private func builtInScreen() -> NSScreen? {
+        if let cached = cachedBuiltInScreen { return cached }
+        let resolved = NSScreen.builtIn
+        cachedBuiltInScreen = resolved
+        return resolved
+    }
+
     private func proximityTick() {
-        guard let screen = NSScreen.builtIn else { return }
+        guard let screen = builtInScreen() else { return }
         let mouse = NSEvent.mouseLocation
         // Only run the full hit-test when the cursor is near the top of the
         // built-in screen; otherwise nothing relevant could be happening.
@@ -378,7 +390,7 @@ class NotchWindow: NSPanel {
         let mouseLocation = NSEvent.mouseLocation
 
         // Check the notch area itself
-        guard let screen = NSScreen.builtIn else { return }
+        guard let screen = builtInScreen() else { return }
         let screenFrame = screen.frame
         let effectiveWidth = isExpanded ? notchWidth + 50 : notchWidth
         let notchRect = NSRect(

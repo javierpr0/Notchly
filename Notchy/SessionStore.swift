@@ -598,6 +598,7 @@ class SessionStore {
         sessions[index].paneStatuses.removeAll()
         sessions[index].paneWorkingStartedAt.removeAll()
         sessions[index].generation += 1
+        updateSleepPrevention()
     }
 
     /// Puts a session to sleep: kills all of its pane shells, frees the terminal
@@ -691,6 +692,7 @@ class SessionStore {
         if activeSessionId == id {
             activeSessionId = sessions.first?.id
         }
+        updateSleepPrevention()
         persistSessions()
     }
 
@@ -728,6 +730,7 @@ class SessionStore {
         if let newRoot = sessions[index].splitRoot.removing(paneId) {
             sessions[index].splitRoot = newRoot
             sessions[index].focusedPaneId = newRoot.allPaneIds.first ?? sessions[index].focusedPaneId
+            updateSleepPrevention()
             persistSessions()
         } else {
             closeSession(sessions[index].id)

@@ -251,6 +251,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         guard hoverHideTimer == nil else { return }
         hoverHideTimer = Timer.scheduledTimer(withTimeInterval: hoverHideDelay, repeats: false) { [weak self] _ in
             guard let self else { return }
+            // The one-shot timer has fired and is now invalid; clear the
+            // reference unconditionally so a future scheduleHoverHide() isn't
+            // blocked by the `hoverHideTimer == nil` guard. Without this, a
+            // failed re-check (mouse re-entered bounds within the delay) would
+            // leave a stale non-nil timer and permanently disable auto-hide.
+            self.hoverHideTimer = nil
             // Re-check one more time before hiding (mouse may have returned)
             let mouse = NSEvent.mouseLocation
             let inNotch = self.notchWindow?.frame.insetBy(dx: -self.hoverMargin, dy: -self.hoverMargin).contains(mouse) ?? false
@@ -497,6 +503,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
               let id = UUID(uuidString: idString) else {
             completionHandler()
             return
+        }
+        // Acting on one notification clears every delivered notification for the
+        // same session — otherwise repeated waiting/completed events stack up as
+        // stale duplicates that are never cleaned (each used a fresh UUID id).
+        center.getDeliveredNotifications { notifications in
+            let staleIds = notifications
+                .filter { ($0.request.content.userInfo[AppNotification.sessionIdKey] as? String) == idString }
+                .map { $0.request.identifier }
+            if !staleIds.isEmpty {
+                center.removeDeliveredNotifications(withIdentifiers: staleIds)
+            }
         }
         if response.actionIdentifier == "CONTINUE" {
             DispatchQueue.main.async { [weak self] in

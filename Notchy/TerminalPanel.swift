@@ -137,7 +137,7 @@ class TerminalPanel: NSPanel {
         if let screen = NSScreen.main {
             let panelWidth = frame.width
             let panelHeight = frame.height
-            let x = rect.midX - panelWidth / 2
+            let x = Self.clampX(rect.midX - panelWidth / 2, width: panelWidth, in: screen)
             let y = screen.visibleFrame.maxY - panelHeight
             setFrameOrigin(NSPoint(x: x, y: y))
         }
@@ -150,12 +150,20 @@ class TerminalPanel: NSPanel {
         let screenFrame = screen.frame
         let panelWidth = frame.width
         let panelHeight = frame.height
-        let x = screenFrame.midX - panelWidth / 2
+        let x = Self.clampX(screenFrame.midX - panelWidth / 2, width: panelWidth, in: screen)
         let y = screenFrame.maxY - panelHeight
         setFrameOrigin(NSPoint(x: x, y: y))
         makeKeyAndOrderFront(nil)
         NotificationCenter.default.post(name: .NotchyNotchStatusChanged, object: nil)
         ensureTerminalFocus()
+    }
+
+    /// Keeps the panel's left edge on-screen and its right edge from spilling
+    /// past the visible area, so the tab strip and side buttons stay reachable
+    /// even when the status item is near the right edge of the menu bar.
+    private static func clampX(_ x: CGFloat, width: CGFloat, in screen: NSScreen) -> CGFloat {
+        let visible = screen.visibleFrame
+        return max(visible.minX, min(x, visible.maxX - width))
     }
 
     // Fallback for show paths where windowDidBecomeKey races (notch hover open

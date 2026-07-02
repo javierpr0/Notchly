@@ -30,7 +30,11 @@ final class TelegramService {
     func startIfConfigured() {
         guard pollTask == nil else { return }
         let config = TelegramConfigStore.shared.config
-        guard config.enabled, let token = TelegramKeychain.load(), !token.isEmpty else { return }
+        // Require a chat id before polling starts — otherwise the live loop
+        // acknowledges (and permanently discards) the user's very first
+        // message before "Detectar chat ID" ever gets to see it.
+        guard config.enabled, Int64(config.chatId) != nil,
+              let token = TelegramKeychain.load(), !token.isEmpty else { return }
         let client = TelegramBotClient(token: token)
         pollTask = Task { [weak self] in await self?.pollLoop(client: client) }
     }

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.1] - 2026-07-01
+
+### Fixed
+- "Detectar chat ID" in Telegram settings now reliably finds your first message to the bot: previously, enabling the toggle started the live polling loop as soon as a token was saved, which immediately consumed (and discarded) any pending message before the detect button ever got to read it. Polling now waits until a chat id is actually configured before it starts.
+
 ## [0.29.0] - 2026-07-01
 
 ### Added
@@ -314,6 +319,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pin panel open option
 
 [Unreleased]: https://github.com/javierpr0/notchly/compare/v0.28.3...HEAD
+[0.29.1]: https://github.com/javierpr0/notchly/compare/v0.29.0...v0.29.1
 [0.29.0]: https://github.com/javierpr0/notchly/compare/v0.28.3...v0.29.0
 [0.28.3]: https://github.com/javierpr0/notchly/compare/v0.28.2...v0.28.3
 [0.28.2]: https://github.com/javierpr0/notchly/compare/v0.28.1...v0.28.2

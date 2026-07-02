@@ -56,7 +56,7 @@ final class TelegramConfigStore {
         didSet {
             guard config != oldValue else { return }
             save()
-            if config.enabled != oldValue.enabled {
+            if config.enabled != oldValue.enabled || config.chatId != oldValue.chatId {
                 TelegramService.shared.restart()
             }
         }

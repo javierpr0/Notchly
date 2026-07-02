@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-07-01
+
+### Added
+- Optional Telegram control, off by default: enable it from the gear popover or the menu bar icon ("Telegram…") to get a Telegram message with Approve/Interrupt buttons when a session needs input or finishes, and act on it from your phone. An opt-in free-text mode lets replies get typed straight into the pane, and Deny/Always-allow buttons can be configured with custom keystrokes. The bot token lives in Keychain; only the configured chat id can act on anything.
+
 ## [0.28.3] - 2026-06-25
 
 ### Changed
@@ -309,6 +314,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pin panel open option
 
 [Unreleased]: https://github.com/javierpr0/notchly/compare/v0.28.3...HEAD
+[0.29.0]: https://github.com/javierpr0/notchly/compare/v0.28.3...v0.29.0
 [0.28.3]: https://github.com/javierpr0/notchly/compare/v0.28.2...v0.28.3
 [0.28.2]: https://github.com/javierpr0/notchly/compare/v0.28.1...v0.28.2
 [0.28.1]: https://github.com/javierpr0/notchly/compare/v0.28.0...v0.28.1

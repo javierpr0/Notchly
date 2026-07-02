@@ -21,6 +21,7 @@ extension Notification.Name {
     static let NotchyExpandPanel = Notification.Name("NotchyExpandPanel")
     static let NotchyNotchStatusChanged = Notification.Name("NotchyNotchStatusChanged")
     static let NotchyCheckForUpdates = Notification.Name("NotchyCheckForUpdates")
+    static let NotchyShowTelegramSettings = Notification.Name("NotchyShowTelegramSettings")
 }
 
 @Observable
@@ -134,6 +135,14 @@ class SessionStore {
               let paneId = session.paneStatuses.first(where: { $0.value == .waitingForInput })?.key
         else { return }
         TerminalManager.shared.sendCommand(to: paneId, command: "")
+    }
+
+    /// Current status of a pane, or nil if no session contains it (e.g. the
+    /// tab was closed). Used by TelegramService to validate a button/reply
+    /// still targets a live pane before writing anything to its stdin.
+    func paneStatus(for paneId: UUID) -> TerminalStatus? {
+        guard let session = sessions.first(where: { $0.splitRoot.containsPane(paneId) }) else { return nil }
+        return session.paneStatuses[paneId] ?? .idle
     }
 
     // MARK: - Session Persistence
@@ -420,7 +429,10 @@ class SessionStore {
             let sessionName = sessions[index].projectName
             if newAggregate == .waitingForInput && previousAggregate != .waitingForInput {
                 playSound(named: "waitingForInput")
-                sendNotification(title: L10n.shared.actionRequired, body: L10n.shared.needsInput(sessionName), sessionId: sessionId, canContinue: true)
+                let title = L10n.shared.actionRequired
+                let body = L10n.shared.needsInput(sessionName)
+                sendNotification(title: title, body: body, sessionId: sessionId, canContinue: true)
+                TelegramService.shared.notifyWaitingForInput(paneId: paneId, title: title, body: body)
                 if isPinned && !isTerminalExpanded && sessionId == activeSessionId {
                     isTerminalExpanded = true
                     NotificationCenter.default.post(name: .NotchyExpandPanel, object: nil)
@@ -438,6 +450,7 @@ class SessionStore {
                 }
                 playSound(named: "taskCompleted")
                 sendNotification(title: title, body: body, sessionId: sessionId)
+                TelegramService.shared.notifyTaskCompleted(paneId: paneId, title: title, body: body)
                 paneCompletionInfo.removeValue(forKey: paneId)
             }
             NotificationCenter.default.post(name: .NotchyNotchStatusChanged, object: nil)

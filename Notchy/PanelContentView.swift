@@ -60,6 +60,13 @@ struct PanelContentView: View {
         return false
     }
 
+    /// Any overlay/dialog that must keep the panel from auto-hiding on
+    /// resign-key (mirrored into SessionStore.isShowingDialog).
+    private var anyDialogVisible: Bool {
+        showRestoreConfirmation || showClaudeMenu || showSettings
+            || sessionStore.showCommandPalette || sessionStore.filePreview != nil
+    }
+
     private var foregroundOpacity: Double {
         sessionStore.isWindowFocused ? 1.0 : 0.6
     }
@@ -271,6 +278,18 @@ struct PanelContentView: View {
                 }
             }
         }
+        .overlay {
+            if let preview = sessionStore.filePreview {
+                ZStack {
+                    Color.black.opacity(0.3)
+                        .onTapGesture { sessionStore.filePreview = nil }
+                    FilePreviewView(request: preview) {
+                        sessionStore.filePreview = nil
+                    }
+                    .padding(20)
+                }
+            }
+        }
         .onAppear {
             sessionStore.refreshLastCheckpoint()
         }
@@ -278,16 +297,19 @@ struct PanelContentView: View {
             sessionStore.refreshLastCheckpoint()
         }
         .onChange(of: showRestoreConfirmation) {
-            sessionStore.isShowingDialog = showRestoreConfirmation || showClaudeMenu || showSettings || sessionStore.showCommandPalette
+            sessionStore.isShowingDialog = anyDialogVisible
         }
         .onChange(of: showClaudeMenu) {
-            sessionStore.isShowingDialog = showRestoreConfirmation || showClaudeMenu || showSettings || sessionStore.showCommandPalette
+            sessionStore.isShowingDialog = anyDialogVisible
         }
         .onChange(of: showSettings) {
-            sessionStore.isShowingDialog = showRestoreConfirmation || showClaudeMenu || showSettings || sessionStore.showCommandPalette
+            sessionStore.isShowingDialog = anyDialogVisible
         }
         .onChange(of: sessionStore.showCommandPalette) {
-            sessionStore.isShowingDialog = showRestoreConfirmation || showClaudeMenu || showSettings || sessionStore.showCommandPalette
+            sessionStore.isShowingDialog = anyDialogVisible
+        }
+        .onChange(of: sessionStore.filePreview) {
+            sessionStore.isShowingDialog = anyDialogVisible
         }
         .alert(L10n.shared.restoreCheckpointTitle, isPresented: $showRestoreConfirmation) {
             Button(L10n.shared.restoreLastCheckpoint, role: .destructive) {

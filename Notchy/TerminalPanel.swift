@@ -353,8 +353,12 @@ class TerminalPanel: NSPanel {
             TerminalManager.shared.resetFontSize()
             return true
         }
-        // Cmd+F → search in terminal
+        // Cmd+F → search in terminal. With the file preview open, fall through
+        // to the responder chain so its NSTextView gets the find bar instead.
         if mods == .command && chars == "f" {
+            if sessionStore.filePreview != nil {
+                return super.performKeyEquivalent(with: event)
+            }
             toggleSearch()
             return true
         }

@@ -44,10 +44,6 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    func requestOpenLink(source: TerminalView, link: String, params: [String: String]) {
-        // no-op: prevent SwiftTerm from auto-opening URLs in the browser
-    }
-
     override init(frame: NSRect) {
         super.init(frame: frame)
         registerForDraggedTypes([.fileURL])
@@ -759,52 +755,93 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
                 NSPasteboard.general.setString(text, forType: .string)
             }
 
-            // When Command is held, SwiftTerm would call requestOpenLink → NSWorkspace.open
-            // on whatever implicit match it finds under the cursor. That works great for
-            // real URLs, but for local file paths like "./scripts/foo.sh" it shows a
-            // Finder "-50" error popup. So we only strip the Command modifier when the
-            // token under the cursor is NOT a real URL; real URLs still open on ⌘-click.
-            if event.modifierFlags.contains(.command),
-               !self.isRealURLUnder(event: event),
-               let stripped = NSEvent.mouseEvent(
-                   with: event.type,
-                   location: event.locationInWindow,
-                   modifierFlags: event.modifierFlags.subtracting(.command),
-                   timestamp: event.timestamp,
-                   windowNumber: event.windowNumber,
-                   context: nil,
-                   eventNumber: event.eventNumber,
-                   clickCount: event.clickCount,
-                   pressure: event.pressure
-               ) {
-                return stripped
+            // ⌘-click routing. SwiftTerm's own handling only covers implicit
+            // URL matches (via requestOpenLink); everything else is ours:
+            //  - URL with a scheme      → pass through, SwiftTerm opens it
+            //  - www./localhost token   → open in browser with a fixed-up scheme
+            //  - existing file path     → inline preview (with optional :line)
+            //  - existing directory     → open in Finder
+            //  - anything else         → strip ⌘ so SwiftTerm doesn't try to
+            //    open a bogus match (Finder "-50" error popup)
+            if event.modifierFlags.contains(.command) {
+                switch self.cmdClickAction(for: event) {
+                case .passThrough:
+                    return event
+                case .openAsURL(let url):
+                    NSWorkspace.shared.open(url)
+                case .previewFile(let url, let line):
+                    Task { @MainActor in
+                        SessionStore.shared.filePreview = FilePreviewRequest(url: url, line: line)
+                    }
+                case .openDirectory(let url):
+                    NSWorkspace.shared.open(url)
+                case .none:
+                    break
+                }
+                if let stripped = NSEvent.mouseEvent(
+                    with: event.type,
+                    location: event.locationInWindow,
+                    modifierFlags: event.modifierFlags.subtracting(.command),
+                    timestamp: event.timestamp,
+                    windowNumber: event.windowNumber,
+                    context: nil,
+                    eventNumber: event.eventNumber,
+                    clickCount: event.clickCount,
+                    pressure: event.pressure
+                ) {
+                    return stripped
+                }
             }
             return event
         }
     }
 
-    private static let urlSchemePrefixes = ["http://", "https://", "mailto:", "ftp://", "ftps://", "ssh://"]
+    private static let urlSchemePrefixes = ["http://", "https://", "mailto:", "ftp://", "ftps://", "ssh://", "vscode://", "cursor://"]
 
-    /// Returns true if the token under the click position starts with a real URL scheme
-    /// (http, https, mailto, ftp, ssh). Used to decide whether to preserve Cmd+click's
-    /// default link-opening behavior vs. suppress it (for local file paths).
-    private func isRealURLUnder(event: NSEvent) -> Bool {
+    private enum CmdClickAction {
+        case passThrough
+        case openAsURL(URL)
+        case previewFile(URL, line: Int?)
+        case openDirectory(URL)
+        case none
+    }
+
+    private func cmdClickAction(for event: NSEvent) -> CmdClickAction {
+        guard let token = tokenUnder(event: event), !token.isEmpty else { return .none }
+        let lower = token.lowercased()
+        if Self.urlSchemePrefixes.contains(where: { lower.hasPrefix($0) }) {
+            return .passThrough
+        }
+        if let url = Self.schemelessWebURL(from: token) {
+            return .openAsURL(url)
+        }
+        if let hit = resolvePathWithLine(token) {
+            var isDir: ObjCBool = false
+            FileManager.default.fileExists(atPath: hit.url.path, isDirectory: &isDir)
+            return isDir.boolValue ? .openDirectory(hit.url) : .previewFile(hit.url, line: hit.line)
+        }
+        return .none
+    }
+
+    /// Returns the whitespace-delimited token under the click position,
+    /// trimmed of common wrapping punctuation.
+    private func tokenUnder(event: NSEvent) -> String? {
         let terminal = getTerminal()
-        guard terminal.cols > 0, terminal.rows > 0 else { return false }
+        guard terminal.cols > 0, terminal.rows > 0 else { return nil }
 
         let point = convert(event.locationInWindow, from: nil)
         let cellHeight = frame.height / CGFloat(terminal.rows)
         let cellWidth = frame.width / CGFloat(terminal.cols)
-        guard cellHeight > 0, cellWidth > 0 else { return false }
+        guard cellHeight > 0, cellWidth > 0 else { return nil }
 
         let viewportRow = Int((frame.height - point.y) / cellHeight)
-        guard viewportRow >= 0, viewportRow < terminal.rows else { return false }
+        guard viewportRow >= 0, viewportRow < terminal.rows else { return nil }
 
         let col = Int(point.x / cellWidth)
-        guard col >= 0 else { return false }
+        guard col >= 0 else { return nil }
 
         let absoluteRow = viewportRow + terminal.buffer.yDisp
-        guard let line = readBufferLine(absoluteRow: absoluteRow) else { return false }
+        guard let line = readBufferLine(absoluteRow: absoluteRow) else { return nil }
 
         // Find the whitespace-delimited token that contains column `col`.
         var start = line.startIndex
@@ -834,9 +871,41 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
             end = line.endIndex
         }
 
-        let token = String(line[start..<end]).trimmingCharacters(in: CharacterSet(charactersIn: "\"'()[],;"))
+        return String(line[start..<end]).trimmingCharacters(in: CharacterSet(charactersIn: "\"'()[],;"))
+    }
+
+    private static let localhostRegex = try? NSRegularExpression(
+        pattern: "^(?:localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0)(?::[0-9]+)?(?:/.*)?$",
+        options: [.caseInsensitive]
+    )
+
+    /// URLs people paste without a scheme: "www.example.com" and dev servers
+    /// like "localhost:3000". Returns a browsable URL with the scheme fixed up.
+    private static func schemelessWebURL(from token: String) -> URL? {
         let lower = token.lowercased()
-        return Self.urlSchemePrefixes.contains { lower.hasPrefix($0) }
+        if lower.hasPrefix("www."), lower.dropFirst(4).contains(".") {
+            return URL(string: "https://\(token)")
+        }
+        let range = NSRange(token.startIndex..., in: token)
+        if let regex = localhostRegex, regex.firstMatch(in: token, range: range) != nil {
+            return URL(string: "http://\(token)")
+        }
+        return nil
+    }
+
+    private static let pathLineRegex = try? NSRegularExpression(pattern: "^(.+?):([0-9]+)(?::[0-9]+)?$")
+
+    /// Resolves a token to an existing path, supporting the "path:line" and
+    /// "path:line:col" suffixes that compilers and Claude commonly emit.
+    private func resolvePathWithLine(_ token: String) -> (url: URL, line: Int?)? {
+        if let url = resolveExistingPath(token) { return (url, nil) }
+        let range = NSRange(token.startIndex..., in: token)
+        guard let regex = Self.pathLineRegex,
+              let match = regex.firstMatch(in: token, range: range),
+              let pathRange = Range(match.range(at: 1), in: token),
+              let lineRange = Range(match.range(at: 2), in: token),
+              let url = resolveExistingPath(String(token[pathRange])) else { return nil }
+        return (url, Int(token[lineRange]))
     }
 
     private func installRightClickMonitor() {

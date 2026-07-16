@@ -150,6 +150,7 @@ final class L10n {
     var paste: String { isSpanish ? "Pegar" : "Paste" }
     var revealInFinder: String { isSpanish ? "Mostrar en Finder" : "Reveal in Finder" }
     var openInFinder: String { isSpanish ? "Abrir en Finder" : "Open in Finder" }
+    var openInDefaultApp: String { isSpanish ? "Abrir con la app predeterminada" : "Open with Default App" }
     var copyPath: String { isSpanish ? "Copiar ruta" : "Copy Path" }
 
     // MARK: - Search

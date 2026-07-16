@@ -52,6 +52,8 @@ class SessionStore {
     var isWindowFocused = true
     var isShowingDialog = false
     var showCommandPalette = false
+    /// Non-nil while the inline file preview overlay is open (⌘-click on a path).
+    var filePreview: FilePreviewRequest?
     var currentTheme: TerminalTheme = TerminalTheme.theme(forId: TerminalManager.shared.currentThemeId)
 
     /// The most recent checkpoint for the active session, used to show the undo button

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-07-16
+
+### Added
+- ⌘-click in the terminal now opens more than plain URLs: schemeless links ("www.example.com", "localhost:3000", "127.0.0.1:8080") open in the browser with the right scheme, existing file paths — including compiler-style "path:line" and "path:line:col" references — open in an inline viewer, and directories open in Finder. Unrecognized tokens keep suppressing the bogus-link Finder error popup as before, and `vscode://` / `cursor://` links now count as real URLs.
+- Inline file preview: ⌘-clicking a file path opens a read-only viewer inside the panel, with the standard find bar (⌘F), jump-to-line highlighting for `path:line` references, native image rendering, and Reveal in Finder / open-in-default-app actions. Binaries and files over 5 MB open in the default external app instead. Close with Esc, the close button, or a click outside.
+
+### Performance
+- Heavy terminal output no longer forces a copy-on-write of the accumulated session-history buffer on every chunk (previously quadratic work up to the 32 KB flush threshold).
+- Resolving which session owns a pane no longer walks every session's split tree on each output/status event; a self-healing pane→session index answers it directly.
+- Command autocomplete storage no longer rewrites its full JSON file on every Enter: writes are debounced by 1 s and still flushed synchronously on quit/deactivate.
+- The notification-text sanitizer no longer recompiles its two regexes on every call, and autocomplete scoring no longer reads the clock once per stored command per keystroke.
+- The notch pill computes its aggregate status and attention count in a single pass over sessions per render (previously ~20 scans), and the terminal's status-check timer is rescheduled instead of recreated on every output chunk.
+- The hover proximity poll now allows 50 ms of timer tolerance so the system can coalesce its wakeups.
+
 ## [0.31.1] - 2026-07-02
 
 ### Changed
@@ -347,7 +361,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global backtick hotkey to toggle panel
 - Pin panel open option
 
-[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.28.3...HEAD
+[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.32.0...HEAD
+[0.32.0]: https://github.com/javierpr0/notchly/compare/v0.31.1...v0.32.0
 [0.31.1]: https://github.com/javierpr0/notchly/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/javierpr0/notchly/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/javierpr0/notchly/compare/v0.29.1...v0.30.0

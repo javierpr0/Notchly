@@ -62,10 +62,12 @@ class SessionHistoryManager {
     func appendData(_ data: Data, for sessionId: UUID) {
         guard !data.isEmpty else { return }
         queue.async { [self] in
-            if var pending = pendingWrites[sessionId] {
-                pending.data.append(data)
-                pendingWrites[sessionId] = pending
-                if pending.data.count >= Self.flushBytesThreshold {
+            if pendingWrites[sessionId] != nil {
+                // Append in place — pulling the struct out into a local first
+                // makes the Data multiply-referenced and forces a full
+                // copy-on-write of the accumulated buffer on every chunk.
+                pendingWrites[sessionId]!.data.append(data)
+                if pendingWrites[sessionId]!.data.count >= Self.flushBytesThreshold {
                     flushPending(for: sessionId)
                 }
             } else {

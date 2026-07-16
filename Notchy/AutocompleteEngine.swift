@@ -30,6 +30,7 @@ class AutocompleteEngine {
         let lowercasedInput = input.lowercased()
 
         var scored: [AutocompleteSuggestion] = []
+        let now = Date()
 
         for cmd in commands {
             // Skip exact matches
@@ -52,7 +53,7 @@ class AutocompleteEngine {
             score += min(log2(Double(cmd.count) + 1) * 5, 30)
 
             // Recency bonus
-            let daysSinceUse = Date().timeIntervalSince(cmd.lastUsed) / 86400
+            let daysSinceUse = now.timeIntervalSince(cmd.lastUsed) / 86400
             if daysSinceUse < 1 {
                 score += 20
             } else if daysSinceUse < 7 {

@@ -360,11 +360,15 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
 
         // Debounce status checks — the buffer can be mid-render when
         // dataReceived fires, causing transient misreads that flicker
-        // between .working and .idle.
-        statusDebounceTimer?.invalidate()
-        statusDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
-            guard let self else { return }
-            self.evaluateStatus(for: id)
+        // between .working and .idle. Pushing fireDate back reuses the
+        // timer instead of allocating a new one per chunk.
+        if let timer = statusDebounceTimer, timer.isValid {
+            timer.fireDate = Date().addingTimeInterval(0.15)
+        } else {
+            statusDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
+                guard let self else { return }
+                self.evaluateStatus(for: id)
+            }
         }
 
         // Trigger autocomplete evaluation
@@ -418,17 +422,21 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         return Self.sanitizeForDisplay(String(last.prefix(100)))
     }
 
+    // Compiled once — sanitizeForDisplay runs on every status evaluation.
+    private static let csiRegex = try? NSRegularExpression(pattern: "\u{001B}\\[[0-?]*[ -/]*[@-~]")
+    private static let oscRegex = try? NSRegularExpression(pattern: "\u{001B}\\][^\u{0007}\u{001B}]*[\u{0007}\u{001B}]")
+
     /// Removes ANSI escape sequences, control characters, and bidi-override
     /// codepoints so terminal output cannot spoof or break notification text.
     static func sanitizeForDisplay(_ input: String) -> String {
         var stripped = input
         // Strip CSI escape sequences (ESC [ ... letter)
-        if let regex = try? NSRegularExpression(pattern: "\u{001B}\\[[0-?]*[ -/]*[@-~]") {
+        if let regex = csiRegex {
             let range = NSRange(stripped.startIndex..., in: stripped)
             stripped = regex.stringByReplacingMatches(in: stripped, range: range, withTemplate: "")
         }
         // Strip OSC sequences (ESC ] ... BEL/ST)
-        if let regex = try? NSRegularExpression(pattern: "\u{001B}\\][^\u{0007}\u{001B}]*[\u{0007}\u{001B}]") {
+        if let regex = oscRegex {
             let range = NSRange(stripped.startIndex..., in: stripped)
             stripped = regex.stringByReplacingMatches(in: stripped, range: range, withTemplate: "")
         }

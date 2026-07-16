@@ -215,7 +215,7 @@ class SessionStore {
     }
 
     func updateWorkingDirectory(_ paneId: UUID, directory: String) {
-        guard let index = sessions.firstIndex(where: { $0.splitRoot.containsPane(paneId) }) else { return }
+        guard let index = sessionIndex(forPane: paneId) else { return }
         let oldDir = sessions[index].splitRoot.workingDirectory(for: paneId)
         guard oldDir != directory else { return }
         sessions[index].splitRoot = sessions[index].splitRoot.updatingWorkingDirectory(paneId, to: directory)
@@ -386,11 +386,34 @@ class SessionStore {
         persistSessions()
     }
 
+    /// Cache mapping pane id → owning session id. Self-healing: every hit is
+    /// verified against the current split tree and any miss triggers a full
+    /// rebuild, so split/close/restore mutations never need to invalidate it.
+    /// Avoids a DFS over every session's split tree on each output event.
+    @ObservationIgnored private var paneToSessionCache: [UUID: UUID] = [:]
+
+    private func sessionIndex(forPane paneId: UUID) -> Int? {
+        if let sid = paneToSessionCache[paneId],
+           let index = sessions.firstIndex(where: { $0.id == sid }),
+           sessions[index].splitRoot.containsPane(paneId) {
+            return index
+        }
+        paneToSessionCache.removeAll(keepingCapacity: true)
+        for session in sessions {
+            for pane in session.splitRoot.allPaneIds {
+                paneToSessionCache[pane] = session.id
+            }
+        }
+        guard let sid = paneToSessionCache[paneId],
+              let index = sessions.firstIndex(where: { $0.id == sid }) else { return nil }
+        return index
+    }
+
     /// Flag a session as having unread output when a chunk arrives on a pane
     /// whose tab is not active. Idempotent: only mutates on the first chunk
     /// after the flag was cleared, so a busy background tab won't churn.
     func noteOutput(forPane paneId: UUID) {
-        guard let index = sessions.firstIndex(where: { $0.splitRoot.containsPane(paneId) }) else { return }
+        guard let index = sessionIndex(forPane: paneId) else { return }
         let sessionId = sessions[index].id
         guard sessionId != activeSessionId, !sessions[index].isSleeping else { return }
         guard !unreadSessionIds.contains(sessionId) else { return }
@@ -398,7 +421,7 @@ class SessionStore {
     }
 
     func updateTerminalStatus(_ paneId: UUID, status: TerminalStatus) {
-        guard let index = sessions.firstIndex(where: { $0.splitRoot.containsPane(paneId) }) else { return }
+        guard let index = sessionIndex(forPane: paneId) else { return }
         // A sleeping session has no live terminals; any in-flight status callback
         // from a torn-down terminal must not resurrect paneStatuses.
         guard !sessions[index].isSleeping else { return }
@@ -740,7 +763,7 @@ class SessionStore {
     }
 
     func focusPane(_ paneId: UUID) {
-        guard let index = sessions.firstIndex(where: { $0.splitRoot.containsPane(paneId) }) else { return }
+        guard let index = sessionIndex(forPane: paneId) else { return }
         sessions[index].focusedPaneId = paneId
         TerminalManager.shared.focusTerminal(for: paneId)
     }

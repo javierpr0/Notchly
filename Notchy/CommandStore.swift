@@ -74,7 +74,37 @@ class CommandStore {
     /// Drain any in-flight async work so all queued writes finish before we
     /// return. Safe to call from any thread.
     func flushSync() {
-        queue.sync { /* serial fence */ }
+        queue.sync { drainPendingSaves() }
+    }
+
+    // MARK: - Debounced persistence (call only from within queue)
+
+    /// Directories with unsaved changes and the exact snapshot to persist.
+    /// Holding the data (not just the dirty flag) protects against the LRU
+    /// cache evicting a directory before its debounced save lands.
+    private var pendingSaves: [String: [StoredCommand]] = [:]
+    private var saveTimer: DispatchSourceTimer?
+
+    /// Coalesces the full-file JSON rewrite that used to run on every Enter.
+    /// Safe against quits: the willTerminate/willResignActive observers call
+    /// flushSync(), which drains pending saves synchronously.
+    private func scheduleSave(_ commands: [StoredCommand], for directory: String) {
+        pendingSaves[directory] = commands
+        guard saveTimer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 1.0)
+        timer.setEventHandler { [weak self] in self?.drainPendingSaves() }
+        timer.resume()
+        saveTimer = timer
+    }
+
+    private func drainPendingSaves() {
+        saveTimer?.cancel()
+        saveTimer = nil
+        for (directory, commands) in pendingSaves {
+            saveCommands(commands, for: directory)
+        }
+        pendingSaves.removeAll()
     }
 
     // MARK: - Public API
@@ -103,12 +133,7 @@ class CommandStore {
                 cmds = Array(cmds.prefix(Self.maxCommandsPerDirectory))
             }
             self.updateCache(directory: directory, commands: cmds)
-            // Persist immediately on the serial queue. The previous version
-            // debounced writes by 2s and relied on app-lifecycle notifications
-            // to flush — those notifications never fired because the
-            // selector-based observer required NSObject inheritance, so a
-            // burst of commands followed by a quit lost all of them.
-            self.saveCommands(cmds, for: directory)
+            self.scheduleSave(cmds, for: directory)
         }
     }
 
@@ -118,7 +143,7 @@ class CommandStore {
             var cmds = self._commands(for: directory)
             cmds.removeAll { $0.text == command }
             self.updateCache(directory: directory, commands: cmds)
-            self.saveCommands(cmds, for: directory)
+            self.scheduleSave(cmds, for: directory)
         }
     }
 
@@ -185,6 +210,11 @@ class CommandStore {
         if let cached = cache[directory] {
             touchCache(directory)
             return cached
+        }
+        // A pending debounced save is fresher than the file on disk.
+        if let pending = pendingSaves[directory] {
+            updateCache(directory: directory, commands: pending)
+            return pending
         }
         let loaded = loadCommands(for: directory)
         updateCache(directory: directory, commands: loaded)

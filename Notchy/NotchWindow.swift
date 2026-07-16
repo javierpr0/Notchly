@@ -353,6 +353,8 @@ class NotchWindow: NSPanel {
             self?.proximityTick()
         }
         if let timer = hoverPollTimer {
+            // Let the system coalesce wakeups — hover latency tolerates 50ms.
+            timer.tolerance = 0.05
             RunLoop.main.add(timer, forMode: .common)
         }
     }
@@ -606,27 +608,31 @@ enum NotchDisplayState: Equatable {
 
     /// Hierarchy: .taskCompleted (always shown) > .waitingForInput > .working > .idle
     @MainActor static var current: NotchDisplayState {
-        let sessions = SessionStore.shared.sessions
-        if sessions.contains(where: { $0.terminalStatus == .taskCompleted }) {
-            return .taskCompleted
-        }
-        if sessions.contains(where: { $0.terminalStatus == .waitingForInput }) {
-            return .waitingForInput
-        }
-        if sessions.contains(where: { $0.terminalStatus == .working }) {
-            return .working
-        }
-        return .idle
+        snapshot().state
     }
 
-    /// Number of sessions currently demanding attention (working, waiting for
-    /// input, or just completed). Drives the count badge in the notch pill.
-    @MainActor static var attentionCount: Int {
-        SessionStore.shared.sessions.filter {
-            $0.terminalStatus == .working
-                || $0.terminalStatus == .waitingForInput
-                || $0.terminalStatus == .taskCompleted
-        }.count
+    /// Aggregate state + attention count in a single pass over the sessions.
+    /// `terminalStatus` recomputes over paneStatuses on each access, so the
+    /// pill computes this once per render instead of once per property access.
+    @MainActor static func snapshot() -> (state: NotchDisplayState, attentionCount: Int) {
+        var state = NotchDisplayState.idle
+        var count = 0
+        for session in SessionStore.shared.sessions {
+            switch session.terminalStatus {
+            case .taskCompleted:
+                state = .taskCompleted
+                count += 1
+            case .waitingForInput:
+                if state != .taskCompleted { state = .waitingForInput }
+                count += 1
+            case .working:
+                if state == .idle { state = .working }
+                count += 1
+            default:
+                break
+            }
+        }
+        return (state, count)
     }
 }
 
@@ -634,10 +640,11 @@ enum NotchDisplayState: Equatable {
 
 struct NotchPillContent: View {
     var isHovering: Bool = false
-    private var displayState: NotchDisplayState { .current }
-    private var attentionCount: Int { NotchDisplayState.attentionCount }
 
     var body: some View {
+        // Single pass over sessions per render; each property access would
+        // otherwise re-scan the full session list.
+        let (displayState, attentionCount) = NotchDisplayState.snapshot()
         ZStack {
             HStack {
                 if displayState == .idle {

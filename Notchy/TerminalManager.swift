@@ -14,6 +14,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     private var statusDebounceTimer: Timer?
     var isInitializing = false
     private var dataReceivedCount = 0
+    private var pendingRedrawFlush = false
 
     /// Hides the view and re-arms the init gate so the next `cd && clear`
     /// sequence reveals it cleanly. Must reset `dataReceivedCount` too — a
@@ -115,6 +116,10 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     // responder chain but the view not redrawing the cursor until a click.
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        // SwiftTerm's incremental invalidation is lost while detached (it
+        // clears the emulator's dirty range even when setNeedsDisplay lands
+        // on a window-less view), so re-arm a full repaint on re-attach.
+        needsDisplay = true
         guard let window, window.isKeyWindow else { return }
         if window.firstResponder !== self {
             window.makeFirstResponder(self)
@@ -353,9 +358,28 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
                 isInitializing = false
                 Task { @MainActor in
                     self.alphaValue = 1
+                    // Invalidations coalesced while alpha was 0 may have been
+                    // dropped — repaint everything on reveal.
+                    self.setNeedsDisplay(self.bounds)
                 }
             }
             return
+        }
+
+        // SwiftTerm only invalidates the changed region and consumes its
+        // dirty range; inside a non-activating, often non-key panel AppKit
+        // can defer that partial flush until the next event, leaving typed
+        // text invisible until a click (mouseDown is the only full redraw).
+        // Coalesced full repaint + explicit flush (~30fps cap) closes that.
+        if !pendingRedrawFlush {
+            pendingRedrawFlush = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+                guard let self else { return }
+                self.pendingRedrawFlush = false
+                guard self.window != nil, self.alphaValue > 0 else { return }
+                self.needsDisplay = true
+                self.displayIfNeeded()
+            }
         }
 
         // Debounce status checks — the buffer can be mid-render when

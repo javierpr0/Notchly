@@ -277,76 +277,91 @@ struct PanelContentView: View {
         }
     }
 
-    var body: some View {
+    private var panelBackground: some View {
+        ZStack {
+            // System blur so what's behind the window reads as frosted
+            // glass instead of sharp text bleeding through. Only mounted
+            // while the user actually has transparency dialed in.
+            if sessionStore.panelOpacity < 1 {
+                PanelBlurBackground(intensity: sessionStore.panelBlur, isDark: themeIsDark)
+            }
+            Color(nsColor: theme.background).opacity(chromeBackgroundOpacity)
+        }
+    }
+
+    @ViewBuilder
+    private var dropTargetOverlay: some View {
+        if isDropTargeted {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(DS.Color.accent.opacity(0.08))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(DS.Color.accent, lineWidth: 2)
+                }
+                .overlay {
+                    Text(L10n.shared.dropToOpen)
+                        .font(DS.Font.bodyMedium)
+                        .foregroundStyle(DS.Color.accent)
+                }
+                .allowsHitTesting(false)
+        }
+    }
+
+    @ViewBuilder
+    private var commandPaletteOverlay: some View {
+        if sessionStore.showCommandPalette,
+           let session = sessionStore.activeSession {
+            let dir = session.projectPath ?? session.workingDirectory
+            ZStack {
+                Color.black.opacity(0.3)
+                    .onTapGesture { sessionStore.showCommandPalette = false }
+                VStack {
+                    CommandPaletteView(
+                        currentDirectory: dir,
+                        onExecute: { command in
+                            TerminalManager.shared.sendCommand(to: session.focusedPaneId, command: command)
+                        },
+                        onDismiss: { sessionStore.showCommandPalette = false }
+                    )
+                    .padding(.top, 60)
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var filePreviewOverlay: some View {
+        if let preview = sessionStore.filePreview {
+            ZStack {
+                Color.black.opacity(0.3)
+                    .onTapGesture { sessionStore.filePreview = nil }
+                FilePreviewView(request: preview) {
+                    sessionStore.filePreview = nil
+                }
+                .padding(20)
+            }
+        }
+    }
+
+    private var panelChrome: some View {
         VStack(spacing: 0) {
             topBar
             checkpointBar
             terminalArea
         }
-        .background {
-            ZStack {
-                // System blur so what's behind the window reads as frosted
-                // glass instead of sharp text bleeding through. Only mounted
-                // while the user actually has transparency dialed in.
-                if sessionStore.panelOpacity < 1 {
-                    PanelBlurBackground(intensity: sessionStore.panelBlur, isDark: themeIsDark)
-                }
-                Color(nsColor: theme.background).opacity(chromeBackgroundOpacity)
-            }
-        }
+        .background { panelBackground }
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .dropDestination(for: URL.self) { urls, _ in
             handleFolderDrop(urls)
         } isTargeted: { isDropTargeted = $0 }
-        .overlay {
-            if isDropTargeted {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(DS.Color.accent.opacity(0.08))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .strokeBorder(DS.Color.accent, lineWidth: 2)
-                    }
-                    .overlay {
-                        Text(L10n.shared.dropToOpen)
-                            .font(DS.Font.bodyMedium)
-                            .foregroundStyle(DS.Color.accent)
-                    }
-                    .allowsHitTesting(false)
-            }
-        }
-        .overlay {
-            if sessionStore.showCommandPalette,
-               let session = sessionStore.activeSession {
-                let dir = session.projectPath ?? session.workingDirectory
-                ZStack {
-                    Color.black.opacity(0.3)
-                        .onTapGesture { sessionStore.showCommandPalette = false }
-                    VStack {
-                        CommandPaletteView(
-                            currentDirectory: dir,
-                            onExecute: { command in
-                                TerminalManager.shared.sendCommand(to: session.focusedPaneId, command: command)
-                            },
-                            onDismiss: { sessionStore.showCommandPalette = false }
-                        )
-                        .padding(.top, 60)
-                        Spacer()
-                    }
-                }
-            }
-        }
-        .overlay {
-            if let preview = sessionStore.filePreview {
-                ZStack {
-                    Color.black.opacity(0.3)
-                        .onTapGesture { sessionStore.filePreview = nil }
-                    FilePreviewView(request: preview) {
-                        sessionStore.filePreview = nil
-                    }
-                    .padding(20)
-                }
-            }
-        }
+        .overlay { dropTargetOverlay }
+        .overlay { commandPaletteOverlay }
+        .overlay { filePreviewOverlay }
+    }
+
+    var body: some View {
+        panelChrome
         .onAppear {
             sessionStore.refreshLastCheckpoint()
         }

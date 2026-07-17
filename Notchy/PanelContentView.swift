@@ -122,15 +122,6 @@ struct PanelContentView: View {
             HStack(spacing: DS.Spacing.sm) {
 
                 HStack(spacing: DS.Spacing.xxs) {
-                    Button(action: { sessionStore.isPinned.toggle() }) {
-                        NotchyIcon(kind: sessionStore.isPinned ? .pinFilled : .pin)
-                            .rotationEffect(.degrees(sessionStore.isPinned ? 0 : 45))
-                            .dsChromeButton(isActive: sessionStore.isPinned)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(DS.Color.textPrimary.opacity(foregroundOpacity))
-                    .help(sessionStore.isPinned ? L10n.shared.unpinPanel : L10n.shared.pinPanelOpen)
-
                     Button(action: { showSettings.toggle() }) {
                         NotchyIcon(kind: .gear)
                             .dsChromeButton(isActive: showSettings)

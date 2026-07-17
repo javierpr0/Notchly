@@ -48,6 +48,29 @@ class SessionStore {
             UserDefaults.standard.set(hideSleepingTabs, forKey: "hideSleepingTabs")
         }
     }
+    /// User-adjustable background opacity for the whole panel (chrome,
+    /// terminal area, file preview) — the desktop shows through below 1.0.
+    /// Floor of 0.5 keeps text readable. Surfaced in settings as
+    /// "Transparency" (1 − opacity).
+    var panelOpacity: Double = {
+        let stored = UserDefaults.standard.object(forKey: "panelOpacity") as? Double
+        return min(max(stored ?? 1.0, 0.5), 1.0)
+    }() {
+        didSet {
+            UserDefaults.standard.set(panelOpacity, forKey: "panelOpacity")
+        }
+    }
+    /// Blur intensity (0–1) applied behind the panel while transparency is
+    /// active. Implemented as the NSVisualEffectView's alpha: 0 = sharp
+    /// see-through, 1 = full frosted glass.
+    var panelBlur: Double = {
+        let stored = UserDefaults.standard.object(forKey: "panelBlur") as? Double
+        return min(max(stored ?? 1.0, 0.0), 1.0)
+    }() {
+        didSet {
+            UserDefaults.standard.set(panelBlur, forKey: "panelBlur")
+        }
+    }
     var isTerminalExpanded = true
     var isWindowFocused = true
     var isShowingDialog = false

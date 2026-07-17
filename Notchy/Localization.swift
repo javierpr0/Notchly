@@ -151,6 +151,8 @@ final class L10n {
     var revealInFinder: String { isSpanish ? "Mostrar en Finder" : "Reveal in Finder" }
     var openInFinder: String { isSpanish ? "Abrir en Finder" : "Open in Finder" }
     var openInDefaultApp: String { isSpanish ? "Abrir con la app predeterminada" : "Open with Default App" }
+    var transparencyLabel: String { isSpanish ? "Transparencia" : "Transparency" }
+    var blurLabel: String { isSpanish ? "Desenfoque" : "Blur" }
     var copyPath: String { isSpanish ? "Copiar ruta" : "Copy Path" }
 
     // MARK: - Search

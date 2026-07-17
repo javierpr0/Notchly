@@ -1665,7 +1665,16 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
 
     private func applyTheme(to terminal: LocalProcessTerminalView) {
         let theme = currentTheme
-        terminal.nativeBackgroundColor = theme.background
+        // Fully transparent terminal background: SwiftTerm paints its
+        // background three times (layer + per-run fill + gap fill), which
+        // double-composites any translucent color. With .clear all three are
+        // no-ops and the panel's SwiftUI background (theme color scaled by
+        // the user's transparency setting) is the single visible backdrop.
+        terminal.nativeBackgroundColor = .clear
+        // The setter above does NOT touch the view's CALayer — SwiftTerm only
+        // writes layer.backgroundColor during setupOptions() (init/font
+        // changes), so the layer keeps the opaque default until cleared here.
+        terminal.layer?.backgroundColor = NSColor.clear.cgColor
         terminal.nativeForegroundColor = theme.foreground
         terminal.caretColor = theme.cursor
         terminal.selectedTextBackgroundColor = theme.selection
@@ -1676,7 +1685,8 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         UserDefaults.standard.set(themeId, forKey: Self.themeKey)
         let theme = TerminalTheme.theme(forId: themeId)
         for terminal in terminals.values {
-            terminal.nativeBackgroundColor = theme.background
+            terminal.nativeBackgroundColor = .clear
+            terminal.layer?.backgroundColor = NSColor.clear.cgColor
             terminal.nativeForegroundColor = theme.foreground
             terminal.caretColor = theme.cursor
             terminal.selectedTextBackgroundColor = theme.selection

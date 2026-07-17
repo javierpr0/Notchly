@@ -30,6 +30,35 @@ struct WindowDragArea: NSViewRepresentable {
     }
 }
 
+/// Frosted-glass blur of whatever is behind the panel window, used under the
+/// theme tint while the transparency setting is active. Intensity fades the
+/// effect view itself — the system blur radius isn't public API.
+private struct PanelBlurBackground: NSViewRepresentable {
+    var intensity: Double
+    var isDark: Bool
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .hudWindow
+        view.blendingMode = .behindWindow
+        view.state = .active
+        apply(to: view)
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {
+        apply(to: view)
+    }
+
+    private func apply(to view: NSVisualEffectView) {
+        view.alphaValue = intensity
+        // Pin the material to the theme's appearance; left alone it follows
+        // the system appearance and a dark theme washes out milky gray in
+        // light mode.
+        view.appearance = NSAppearance(named: isDark ? .darkAqua : .aqua)
+    }
+}
+
 struct PanelContentView: View {
     @Bindable var sessionStore: SessionStore
     var onClose: () -> Void
@@ -71,9 +100,20 @@ struct PanelContentView: View {
         sessionStore.isWindowFocused ? 1.0 : 0.6
     }
 
-    /// When expanded + unfocused, make chrome backgrounds semi-transparent
+    /// When expanded + unfocused, make chrome backgrounds semi-transparent.
+    /// Always scaled by the user's panel opacity setting.
     private var chromeBackgroundOpacity: Double {
-        (!sessionStore.isWindowFocused && sessionStore.isTerminalExpanded) ? 0.5 : 1.0
+        let base = (!sessionStore.isWindowFocused && sessionStore.isTerminalExpanded) ? 0.5 : 1.0
+        return base * sessionStore.panelOpacity
+    }
+
+    /// Perceived luminance of the theme background — drives the blur's
+    /// appearance so a dark theme gets the dark frosted material even when
+    /// the system is in light mode (otherwise it washes out milky gray).
+    private var themeIsDark: Bool {
+        guard let rgb = theme.background.usingColorSpace(.deviceRGB) else { return true }
+        let luminance = 0.299 * rgb.redComponent + 0.587 * rgb.greenComponent + 0.114 * rgb.blueComponent
+        return luminance < 0.5
     }
 
     var body: some View {
@@ -236,7 +276,17 @@ struct PanelContentView: View {
                 }
             }
         }
-        .background(Color(nsColor: theme.background).opacity(chromeBackgroundOpacity))
+        .background {
+            ZStack {
+                // System blur so what's behind the window reads as frosted
+                // glass instead of sharp text bleeding through. Only mounted
+                // while the user actually has transparency dialed in.
+                if sessionStore.panelOpacity < 1 {
+                    PanelBlurBackground(intensity: sessionStore.panelBlur, isDark: themeIsDark)
+                }
+                Color(nsColor: theme.background).opacity(chromeBackgroundOpacity)
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .dropDestination(for: URL.self) { urls, _ in
             handleFolderDrop(urls)
@@ -544,6 +594,47 @@ struct PanelContentView: View {
                 .foregroundColor(.secondary)
             }
             .padding(.horizontal, 12)
+
+            Divider().padding(.vertical, 6)
+
+            Text(L10n.shared.transparencyLabel)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
+
+            HStack(spacing: 8) {
+                Slider(
+                    value: Binding(
+                        get: { 1 - sessionStore.panelOpacity },
+                        set: { sessionStore.panelOpacity = 1 - $0 }
+                    ),
+                    in: 0...0.5
+                )
+                Text("\(Int((1 - sessionStore.panelOpacity) * 100))%")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .frame(width: 36, alignment: .trailing)
+            }
+            .padding(.horizontal, 12)
+
+            Text(L10n.shared.blurLabel)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.top, 6)
+                .padding(.bottom, 4)
+
+            HStack(spacing: 8) {
+                Slider(value: $sessionStore.panelBlur, in: 0...1)
+                Text("\(Int(sessionStore.panelBlur * 100))%")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .frame(width: 36, alignment: .trailing)
+            }
+            .padding(.horizontal, 12)
+            .disabled(sessionStore.panelOpacity >= 1)
+            .opacity(sessionStore.panelOpacity >= 1 ? 0.4 : 1)
 
             Divider().padding(.vertical, 6)
 

@@ -46,7 +46,7 @@ struct FilePreviewView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .background(Color(nsColor: NSColor(white: 0.1, alpha: 1)))
+        .background(Color(nsColor: NSColor(white: 0.1, alpha: 1)).opacity(SessionStore.shared.panelOpacity))
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 9, style: .continuous)

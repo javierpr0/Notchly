@@ -119,156 +119,169 @@ struct PanelContentView: View {
         return luminance < 0.5
     }
 
+    // Broken out of `body` — the monolithic expression exceeded the Release
+    // type-checker's budget ("unable to type-check in reasonable time").
+    private var topBar: some View {
+        HStack(spacing: DS.Spacing.sm) {
+
+            HStack(spacing: DS.Spacing.xxs) {
+                Button(action: { showSettings.toggle() }) {
+                    NotchyIcon(kind: .gear)
+                        .dsChromeButton(isActive: showSettings)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(DS.Color.textPrimary.opacity(showSettings ? 1.0 : foregroundOpacity))
+                .help(L10n.shared.settings)
+                .popover(isPresented: $showSettings, arrowEdge: .bottom) {
+                    settingsMenuContent
+                }
+            }
+
+            WindowDragArea(onDoubleClick: {
+                sessionStore.isTerminalExpanded.toggle()
+                onToggleExpand?()
+            })
+            .frame(maxWidth: .infinity)
+            .frame(height: 28)
+            .overlay(alignment: .center) {
+                // Centered + hugging while tabs fit; falls back to a
+                // horizontal scroller once they'd overflow so they never
+                // paint over the side control clusters.
+                ViewThatFits(in: .horizontal) {
+                    SessionTabBar(sessionStore: sessionStore)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        SessionTabBar(sessionStore: sessionStore)
+                    }
+                }
+                .allowsHitTesting(true)
+            }
+
+            HStack(spacing: DS.Spacing.xxs) {
+                Button(action: { showClaudeMenu.toggle() }) {
+                    ClaudeIconView()
+                        .frame(width: 14, height: 14)
+                        .dsChromeButton(isActive: showClaudeMenu)
+                }
+                .buttonStyle(.plain)
+                .help(L10n.shared.launchClaude)
+                .popover(isPresented: $showClaudeMenu, arrowEdge: .bottom) {
+                    claudeMenuContent
+                }
+
+                Button(action: { sessionStore.createQuickSession() }) {
+                    NotchyIcon(kind: .plus)
+                        .dsChromeButton()
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(DS.Color.textPrimary.opacity(foregroundOpacity))
+                .help(L10n.shared.newTerminal)
+            }
+        }
+        .padding(.horizontal, DS.Spacing.sm)
+        .padding(.vertical, DS.Spacing.xs)
+        .background(DS.Color.bgElevated.opacity(chromeBackgroundOpacity))
+        // Subtle gradient transition into the terminal area instead of a
+        // hard 1px Divider.
+        .overlay(alignment: .bottom) {
+            LinearGradient(
+                colors: [DS.Color.borderSubtle, .clear],
+                startPoint: .top, endPoint: .bottom
+            )
+            .frame(height: 6)
+            .offset(y: 6)
+            .allowsHitTesting(false)
+        }
+    }
+
+    @ViewBuilder
+    private var checkpointBar: some View {
+        if sessionStore.isTerminalExpanded, sessionStore.checkpointStatus != nil || sessionStore.lastCheckpoint != nil {
+            HStack(spacing: DS.Spacing.sm) {
+                if let status = sessionStore.checkpointStatus {
+                    NotchyIcon(kind: .working, size: 10)
+                        .foregroundStyle(DS.Color.accent)
+                    Text(status)
+                        .font(DS.Font.bodyMedium)
+                        .foregroundStyle(DS.Color.textPrimary)
+                    Spacer()
+                } else if let checkpoint = sessionStore.lastCheckpoint {
+                    NotchyIcon(kind: .bookmark, size: 11)
+                        .foregroundStyle(DS.Color.accent)
+                    Text(L10n.shared.checkpointSaved)
+                        .font(DS.Font.bodyMedium)
+                        .foregroundStyle(DS.Color.textPrimary)
+                    Text(checkpoint.displayName)
+                        .font(DS.Font.caption)
+                        .foregroundStyle(DS.Color.textTertiary)
+
+                    Spacer()
+
+                    Button {
+                        showRestoreConfirmation = true
+                    } label: {
+                        HStack(spacing: DS.Spacing.xs) {
+                            NotchyIcon(kind: .restore, size: 11)
+                            Text(L10n.shared.restoreLastCheckpoint)
+                                .font(DS.Font.caption)
+                        }
+                        .padding(.horizontal, DS.Spacing.sm)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
+                                .fill(DS.Color.accentSoft)
+                        )
+                        .foregroundStyle(DS.Color.accent)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: { sessionStore.lastCheckpoint = nil }) {
+                        NotchyIcon(kind: .close, size: 10)
+                            .foregroundStyle(DS.Color.textTertiary)
+                            .frame(width: 18, height: 18)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, DS.Spacing.md)
+            .padding(.vertical, DS.Spacing.xs)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(DS.Color.bgChrome.opacity(chromeBackgroundOpacity))
+        }
+    }
+
+    @ViewBuilder
+    private var terminalArea: some View {
+        if sessionStore.isTerminalExpanded {
+            // Terminal area — soft gradient transition (no hard Divider)
+            if let session = sessionStore.activeSession {
+                if session.hasStarted {
+                    SplitPaneView(
+                        node: session.splitRoot,
+                        launchClaude: session.projectPath != nil,
+                        generation: session.generation,
+                        customCommand: session.customCommand,
+                        sessionStore: sessionStore
+                    )
+                } else {
+                    placeholderView(L10n.shared.clickTabToStart)
+                        .onTapGesture {
+                            sessionStore.startSessionIfNeeded(session.id)
+                        }
+                }
+            } else if sessionStore.sessions.isEmpty {
+                placeholderView(L10n.shared.noSessions)
+            } else {
+                placeholderView(L10n.shared.selectProject)
+            }
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            // Top bar: tabs + controls
-            HStack(spacing: DS.Spacing.sm) {
-
-                HStack(spacing: DS.Spacing.xxs) {
-                    Button(action: { showSettings.toggle() }) {
-                        NotchyIcon(kind: .gear)
-                            .dsChromeButton(isActive: showSettings)
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(DS.Color.textPrimary.opacity(showSettings ? 1.0 : foregroundOpacity))
-                    .help(L10n.shared.settings)
-                    .popover(isPresented: $showSettings, arrowEdge: .bottom) {
-                        settingsMenuContent
-                    }
-                }
-
-                WindowDragArea(onDoubleClick: {
-                    sessionStore.isTerminalExpanded.toggle()
-                    onToggleExpand?()
-                })
-                .frame(maxWidth: .infinity)
-                .frame(height: 28)
-                .overlay(alignment: .center) {
-                    // Centered + hugging while tabs fit; falls back to a
-                    // horizontal scroller once they'd overflow so they never
-                    // paint over the side control clusters.
-                    ViewThatFits(in: .horizontal) {
-                        SessionTabBar(sessionStore: sessionStore)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            SessionTabBar(sessionStore: sessionStore)
-                        }
-                    }
-                    .allowsHitTesting(true)
-                }
-
-                HStack(spacing: DS.Spacing.xxs) {
-                    Button(action: { showClaudeMenu.toggle() }) {
-                        ClaudeIconView()
-                            .frame(width: 14, height: 14)
-                            .dsChromeButton(isActive: showClaudeMenu)
-                    }
-                    .buttonStyle(.plain)
-                    .help(L10n.shared.launchClaude)
-                    .popover(isPresented: $showClaudeMenu, arrowEdge: .bottom) {
-                        claudeMenuContent
-                    }
-
-                    Button(action: { sessionStore.createQuickSession() }) {
-                        NotchyIcon(kind: .plus)
-                            .dsChromeButton()
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(DS.Color.textPrimary.opacity(foregroundOpacity))
-                    .help(L10n.shared.newTerminal)
-                }
-            }
-            .padding(.horizontal, DS.Spacing.sm)
-            .padding(.vertical, DS.Spacing.xs)
-            .background(DS.Color.bgElevated.opacity(chromeBackgroundOpacity))
-            // Subtle gradient transition into the terminal area instead of a
-            // hard 1px Divider.
-            .overlay(alignment: .bottom) {
-                LinearGradient(
-                    colors: [DS.Color.borderSubtle, .clear],
-                    startPoint: .top, endPoint: .bottom
-                )
-                .frame(height: 6)
-                .offset(y: 6)
-                .allowsHitTesting(false)
-            }
-
-            if sessionStore.isTerminalExpanded, sessionStore.checkpointStatus != nil || sessionStore.lastCheckpoint != nil {
-                HStack(spacing: DS.Spacing.sm) {
-                    if let status = sessionStore.checkpointStatus {
-                        NotchyIcon(kind: .working, size: 10)
-                            .foregroundStyle(DS.Color.accent)
-                        Text(status)
-                            .font(DS.Font.bodyMedium)
-                            .foregroundStyle(DS.Color.textPrimary)
-                        Spacer()
-                    } else if let checkpoint = sessionStore.lastCheckpoint {
-                        NotchyIcon(kind: .bookmark, size: 11)
-                            .foregroundStyle(DS.Color.accent)
-                        Text(L10n.shared.checkpointSaved)
-                            .font(DS.Font.bodyMedium)
-                            .foregroundStyle(DS.Color.textPrimary)
-                        Text(checkpoint.displayName)
-                            .font(DS.Font.caption)
-                            .foregroundStyle(DS.Color.textTertiary)
-
-                        Spacer()
-
-                        Button {
-                            showRestoreConfirmation = true
-                        } label: {
-                            HStack(spacing: DS.Spacing.xs) {
-                                NotchyIcon(kind: .restore, size: 11)
-                                Text(L10n.shared.restoreLastCheckpoint)
-                                    .font(DS.Font.caption)
-                            }
-                            .padding(.horizontal, DS.Spacing.sm)
-                            .padding(.vertical, 4)
-                            .background(
-                                RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
-                                    .fill(DS.Color.accentSoft)
-                            )
-                            .foregroundStyle(DS.Color.accent)
-                        }
-                        .buttonStyle(.plain)
-
-                        Button(action: { sessionStore.lastCheckpoint = nil }) {
-                            NotchyIcon(kind: .close, size: 10)
-                                .foregroundStyle(DS.Color.textTertiary)
-                                .frame(width: 18, height: 18)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, DS.Spacing.md)
-                .padding(.vertical, DS.Spacing.xs)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(DS.Color.bgChrome.opacity(chromeBackgroundOpacity))
-            }
-
-            if sessionStore.isTerminalExpanded {
-                // Terminal area — soft gradient transition (no hard Divider)
-                if let session = sessionStore.activeSession {
-                    if session.hasStarted {
-                        SplitPaneView(
-                            node: session.splitRoot,
-                            launchClaude: session.projectPath != nil,
-                            generation: session.generation,
-                            customCommand: session.customCommand,
-                            sessionStore: sessionStore
-                        )
-                    } else {
-                        placeholderView(L10n.shared.clickTabToStart)
-                            .onTapGesture {
-                                sessionStore.startSessionIfNeeded(session.id)
-                            }
-                    }
-                } else if sessionStore.sessions.isEmpty {
-                    placeholderView(L10n.shared.noSessions)
-                } else {
-                    placeholderView(L10n.shared.selectProject)
-                }
-            }
+            topBar
+            checkpointBar
+            terminalArea
         }
         .background {
             ZStack {

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-07-16
+
+### Added
+- Adjustable panel transparency (settings → Transparency, 0–50%): the whole panel — chrome, terminal area, and file preview — lets the desktop show through, with the theme tint preserved. Persists across launches.
+- Adjustable background blur (settings → Blur, 0–100%): frosted-glass blur of whatever is behind the panel while transparency is active, so bleed-through text reads as texture instead of noise. The material follows the theme's appearance (dark themes get the dark material even in light mode).
+
+### Fixed
+- Typed text could stay invisible until you clicked the terminal: SwiftTerm's partial invalidations can be deferred indefinitely by AppKit inside a non-activating panel that is rarely the key window (only a mouse click forces a full redraw). The terminal now repaints when re-attached on tab switch, when first revealed, and coalesces an explicit full repaint (~30 fps cap) while output streams in.
+- Text sharpness: glyphs were rasterized against a transparent context (noisy, fringed edges — SwiftTerm force-enables font smoothing per glyph) and line baselines landed on fractional pixel coordinates. Cell backgrounds now paint in the same context as the text (translucency is split across the tint and cell-fill layers so the composite still matches the slider), and the terminal frame pixel-snaps. At 0% transparency the background is fully opaque again — maximum crispness.
+
+### Changed
+- Removed the pin button from the top bar (its auto-hide behavior is unchanged; the control was unused).
+
 ## [0.32.0] - 2026-07-16
 
 ### Added
@@ -361,7 +374,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global backtick hotkey to toggle panel
 - Pin panel open option
 
-[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.32.0...HEAD
+[Unreleased]: https://github.com/javierpr0/notchly/compare/v0.33.0...HEAD
+[0.33.0]: https://github.com/javierpr0/notchly/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/javierpr0/notchly/compare/v0.31.1...v0.32.0
 [0.31.1]: https://github.com/javierpr0/notchly/compare/v0.31.0...v0.31.1
 [0.31.0]: https://github.com/javierpr0/notchly/compare/v0.30.0...v0.31.0

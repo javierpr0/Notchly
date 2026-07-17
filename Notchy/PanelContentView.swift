@@ -101,10 +101,13 @@ struct PanelContentView: View {
     }
 
     /// When expanded + unfocused, make chrome backgrounds semi-transparent.
-    /// Always scaled by the user's panel opacity setting.
+    /// Scaled by the layered share of the user's opacity setting — the
+    /// terminal cell fills contribute the other layer, so tint × fills
+    /// composes to exactly the requested opacity over the terminal area
+    /// (see TerminalManager.layeredPanelAlpha).
     private var chromeBackgroundOpacity: Double {
         let base = (!sessionStore.isWindowFocused && sessionStore.isTerminalExpanded) ? 0.5 : 1.0
-        return base * sessionStore.panelOpacity
+        return base * (1 - (1 - sessionStore.panelOpacity).squareRoot())
     }
 
     /// Perceived luminance of the theme background — drives the blur's

@@ -3,6 +3,25 @@ import SwiftTerm
 
 private class ClickThroughContainerView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    // SwiftTerm derives every line's baseline from frame.height; SwiftUI
+    // hands us fractional heights, which puts all glyph baselines off the
+    // physical pixel grid and renders text slightly blurry. Size the
+    // terminal manually, snapped to whole physical pixels.
+    override func layout() {
+        super.layout()
+        guard let terminal = subviews.first else { return }
+        let scale = window?.backingScaleFactor ?? 2
+        let snapped = NSRect(
+            x: 0,
+            y: 0,
+            width: floor(bounds.width * scale) / scale,
+            height: floor(bounds.height * scale) / scale
+        )
+        if terminal.frame != snapped {
+            terminal.frame = snapped
+        }
+    }
 }
 
 struct TerminalSessionView: NSViewRepresentable {
@@ -43,14 +62,12 @@ struct TerminalSessionView: NSViewRepresentable {
         // Remove from previous superview if it was in a different container
         terminal.removeFromSuperview()
 
-        terminal.translatesAutoresizingMaskIntoConstraints = false
+        // Manual layout (see ClickThroughContainerView.layout) instead of
+        // edge-anchored constraints, so the frame can pixel-snap.
+        terminal.translatesAutoresizingMaskIntoConstraints = true
+        terminal.autoresizingMask = []
         container.addSubview(terminal)
-        NSLayoutConstraint.activate([
-            terminal.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            terminal.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            terminal.topAnchor.constraint(equalTo: container.topAnchor),
-            terminal.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
+        container.needsLayout = true
 
         // Give terminal keyboard focus
         DispatchQueue.main.async {

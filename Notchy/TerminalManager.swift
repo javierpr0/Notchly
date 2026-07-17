@@ -1687,34 +1687,51 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         TerminalTheme.theme(forId: currentThemeId)
     }
 
+    /// The panel's translucency is split across two stacked layers — the
+    /// SwiftUI theme tint below and the terminal's per-cell fills above —
+    /// each at 1−√(1−opacity) so the composite matches the user's setting.
+    /// The cell fills matter for text quality: SwiftTerm hard-enables font
+    /// smoothing per glyph, and glyphs rasterized against a clear context
+    /// get noisy fringed edges; a real fill color in the same context keeps
+    /// them clean. At opacity 1 this resolves to the fully opaque theme
+    /// background (crispest possible rendering).
+    static func layeredPanelAlpha() -> CGFloat {
+        let stored = UserDefaults.standard.object(forKey: "panelOpacity") as? Double
+        let opacity = min(max(stored ?? 1.0, 0.5), 1.0)
+        return CGFloat(1 - (1 - opacity).squareRoot())
+    }
+
     private func applyTheme(to terminal: LocalProcessTerminalView) {
         let theme = currentTheme
-        // Fully transparent terminal background: SwiftTerm paints its
-        // background three times (layer + per-run fill + gap fill), which
-        // double-composites any translucent color. With .clear all three are
-        // no-ops and the panel's SwiftUI background (theme color scaled by
-        // the user's transparency setting) is the single visible backdrop.
-        terminal.nativeBackgroundColor = .clear
-        // The setter above does NOT touch the view's CALayer — SwiftTerm only
-        // writes layer.backgroundColor during setupOptions() (init/font
-        // changes), so the layer keeps the opaque default until cleared here.
-        terminal.layer?.backgroundColor = NSColor.clear.cgColor
+        let alpha = Self.layeredPanelAlpha()
+        if alpha >= 1 {
+            terminal.nativeBackgroundColor = theme.background
+            terminal.layer?.backgroundColor = theme.background.cgColor
+        } else {
+            terminal.nativeBackgroundColor = theme.background.withAlphaComponent(alpha)
+            // Keep the CALayer clear: SwiftTerm's setter never updates it, and
+            // a colored layer would add a third composite on top of the fills.
+            terminal.layer?.backgroundColor = NSColor.clear.cgColor
+        }
         terminal.nativeForegroundColor = theme.foreground
         terminal.caretColor = theme.cursor
         terminal.selectedTextBackgroundColor = theme.selection
         terminal.installColors(theme.swiftTermColors())
     }
 
+    /// Re-applies theme backgrounds when the transparency slider moves.
+    func refreshPanelOpacity() {
+        for terminal in terminals.values {
+            applyTheme(to: terminal)
+            terminal.setNeedsDisplay(terminal.bounds)
+        }
+    }
+
     func setTheme(_ themeId: String) {
         UserDefaults.standard.set(themeId, forKey: Self.themeKey)
         let theme = TerminalTheme.theme(forId: themeId)
         for terminal in terminals.values {
-            terminal.nativeBackgroundColor = .clear
-            terminal.layer?.backgroundColor = NSColor.clear.cgColor
-            terminal.nativeForegroundColor = theme.foreground
-            terminal.caretColor = theme.cursor
-            terminal.selectedTextBackgroundColor = theme.selection
-            terminal.installColors(theme.swiftTermColors())
+            applyTheme(to: terminal)
             terminal.setNeedsDisplay(terminal.bounds)
         }
         Task { @MainActor in

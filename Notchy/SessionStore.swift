@@ -58,6 +58,7 @@ class SessionStore {
     }() {
         didSet {
             UserDefaults.standard.set(panelOpacity, forKey: "panelOpacity")
+            TerminalManager.shared.refreshPanelOpacity()
         }
     }
     /// Blur intensity (0–1) applied behind the panel while transparency is

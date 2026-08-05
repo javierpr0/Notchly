@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.1] - 2026-08-05
+
+### Performance
+- Terminal status detection no longer reads the buffer cell by cell: it goes through the buffer lines directly and skips each row's blank tail. This ran over 40 rows every 150 ms for every pane producing output.
+- Command autocomplete no longer runs on the main thread. Scoring called into the command store's serial queue — which also does the JSON load/save and the zsh-history import — so typing stalled for as long as that I/O took, and then ranked up to 500 commands per keystroke on the main thread.
+- Checkpoint lookups (`git for-each-ref`, blocking) moved off the main thread. They fired on every tab's first render, on every tab hover, on every tab switch and on every panel open.
+- While the panel is the key window the terminal no longer forces a full-view repaint on every 30 ms of output; AppKit flushes the partial invalidations there on its own. The forced repaint stays for the non-key panel, where it fixes text staying invisible until a click.
+- Session history writes dropped two syscalls per flush (a chmod and a stat, once per 250 ms per streaming pane): permissions are enforced when the file handle is opened, and the rotation size check runs once per megabyte written.
+- Aggregate tab status is computed in a single pass with no intermediate array, the split-pane view no longer walks the pane tree to ask whether a tab is split, and checkpoint date formatting reuses one formatter instead of building one per read.
+- The notch face stops its blink loop while nothing can see it (display asleep or the app fully occluded), and the pane controls only mount their live blur while hovered.
+
+### Fixed
+- Hardened the terminal buffer reader against an out-of-range column: the cursor can legitimately sit one past the last column while a line wrap is pending.
+
 ## [0.33.0] - 2026-07-16
 
 ### Added
@@ -375,6 +389,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pin panel open option
 
 [Unreleased]: https://github.com/javierpr0/notchly/compare/v0.33.0...HEAD
+[0.33.1]: https://github.com/javierpr0/notchly/compare/v0.33.0...v0.33.1
 [0.33.0]: https://github.com/javierpr0/notchly/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/javierpr0/notchly/compare/v0.31.1...v0.32.0
 [0.31.1]: https://github.com/javierpr0/notchly/compare/v0.31.0...v0.31.1

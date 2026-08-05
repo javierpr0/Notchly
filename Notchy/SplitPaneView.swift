@@ -220,10 +220,14 @@ struct PaneControlsView: View {
         }
         .padding(.horizontal, DS.Spacing.xs)
         .padding(.vertical, 4)
+        // The live blur is only worth its compositing cost while the controls
+        // are actually being used; at rest (opacity 0.5) a flat tint is
+        // indistinguishable and costs nothing.
         .background(
             RoundedRectangle(cornerRadius: DS.Radius.sm, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .opacity(isHovering ? 1 : 0.78)
+                .fill(isHovering
+                      ? AnyShapeStyle(.ultraThinMaterial)
+                      : AnyShapeStyle(DS.Color.bgElevated.opacity(0.78)))
         )
         .opacity(isHovering ? 1 : 0.5)
         .onHover { hovering in
@@ -254,8 +258,12 @@ struct SplitPaneView: View {
         sessionStore.activeSession?.focusedPaneId
     }
 
+    /// A split root always holds at least two panes, so the shape of the root
+    /// answers this without walking the tree and allocating an id array on
+    /// every pane's body evaluation.
     private var hasMultiplePanes: Bool {
-        (sessionStore.activeSession?.splitRoot.allPaneIds.count ?? 0) > 1
+        if case .split = sessionStore.activeSession?.splitRoot { return true }
+        return false
     }
 
     var body: some View {

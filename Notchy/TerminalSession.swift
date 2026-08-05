@@ -50,16 +50,32 @@ struct TerminalSession: Identifiable {
     var worktreeRepoRoot: String?
     var isWorktree: Bool { worktreeBranch != nil && worktreeRepoRoot != nil }
 
-    /// Aggregate status across all panes
+    /// Aggregate status across all panes. Single pass, no intermediate array:
+    /// every tab render and every notch snapshot reads this property.
     var terminalStatus: TerminalStatus {
         if isSleeping { return .sleeping }
-        let statuses = Array(paneStatuses.values)
-        if statuses.isEmpty { return .idle }
-        if statuses.contains(.working) { return .working }
-        if statuses.contains(.waitingForInput) { return .waitingForInput }
-        if statuses.contains(.taskCompleted) { return .taskCompleted }
-        if statuses.contains(.interrupted) { return .interrupted }
-        return .idle
+        var best = 0
+        for status in paneStatuses.values {
+            let rank: Int
+            switch status {
+            case .working: rank = 4
+            case .waitingForInput: rank = 3
+            case .taskCompleted: rank = 2
+            case .interrupted: rank = 1
+            case .idle, .sleeping: rank = 0
+            }
+            if rank > best {
+                best = rank
+                if rank == 4 { break }
+            }
+        }
+        switch best {
+        case 4: return .working
+        case 3: return .waitingForInput
+        case 2: return .taskCompleted
+        case 1: return .interrupted
+        default: return .idle
+        }
     }
 
     /// Custom command to run instead of auto-detecting claude

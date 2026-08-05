@@ -264,12 +264,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         let terminal = getTerminal()
         let startRow = max(0, terminal.rows - 5)
         for row in startRow..<terminal.rows {
-            var line = ""
-            for col in 0..<terminal.cols {
-                let ch = terminal.getCharacter(col: col, row: row) ?? " "
-                line.append(ch == "\u{0}" ? " " : ch)
-            }
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let trimmed = readRow(row, in: terminal).trimmingCharacters(in: .whitespaces)
             if trimmed.contains("\u{276F}") { return true }
             if Self.hasTokenCounterLine(trimmed) { return true }
             if trimmed.contains("Esc to cancel") || trimmed.contains("esc to interrupt") { return true }
@@ -312,17 +307,32 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         return StatusSnapshot(visibleText: visible, fullText: full, recentLines: recent)
     }
 
+    // nonisolated: handed to translateToString, which invokes it from a
+    // synchronous non-isolated context.
+    private nonisolated static func cellCharacter(_ cell: CharData) -> Character {
+        let ch = cell.getCharacter()
+        return ch == "\u{0}" ? " " : ch
+    }
+
     /// Reads columns [from, to) of `row` into a String, mapping NUL to space.
-    /// `to` defaults to the full row width.
+    /// `to` defaults to the full row width (trimmed right).
+    ///
+    /// Goes through the BufferLine directly instead of `terminal.getCharacter`:
+    /// that path re-resolves the buffer line and bounds-checks on every single
+    /// cell, and status detection reads 40 rows every 150 ms per streaming pane.
+    /// `trimRight` also skips the blank tail, which is most of a typical row.
     private func readRow(_ row: Int, in terminal: Terminal, from: Int = 0, to: Int? = nil) -> String {
-        let end = to ?? terminal.cols
-        var line = ""
-        line.reserveCapacity(max(0, end - from))
-        for col in from..<end {
-            let ch = terminal.getCharacter(col: col, row: row) ?? " "
-            line.append(ch == "\u{0}" ? " " : ch)
+        guard let line = terminal.getLine(row: row) else { return "" }
+        // translateToString indexes the cell array directly, so an out-of-range
+        // column traps instead of returning a blank the way getCharacter did.
+        // The cursor can legitimately sit at `cols` (pending wrap), so clamp.
+        let start = max(0, min(from, line.count))
+        guard let to else {
+            return line.translateToString(trimRight: true, startCol: start, characterProvider: Self.cellCharacter)
         }
-        return line
+        let end = min(to, line.count)
+        guard end > start else { return "" }
+        return line.translateToString(startCol: start, endCol: end, characterProvider: Self.cellCharacter)
     }
 
     /// Reads only the last `maxRows` rows from the terminal buffer. Cheaper
@@ -376,7 +386,13 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
                 guard let self else { return }
                 self.pendingRedrawFlush = false
-                guard self.window != nil, self.alphaValue > 0 else { return }
+                guard let window = self.window, self.alphaValue > 0 else { return }
+                // The forced full repaint exists because AppKit defers
+                // SwiftTerm's partial invalidation in a non-key panel until the
+                // next event, leaving typed text invisible until a click. A key
+                // window flushes those dirty rects on its own, so there the
+                // full-view repaint is pure overhead on every 30 ms of output.
+                guard !window.isKeyWindow else { return }
                 self.needsDisplay = true
                 self.displayIfNeeded()
             }
@@ -553,14 +569,29 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
             return
         }
 
-        let suggestions = AutocompleteEngine.shared.suggestions(for: input, in: dir)
-        guard let best = suggestions.first else {
-            clearGhostText()
-            return
+        // Scoring runs off the main thread: it calls CommandStore, whose serial
+        // queue also does the JSON load/save and the zsh-history import, so the
+        // old `queue.sync` from here stalled typing for as long as that I/O
+        // took — and then ranked up to 500 commands (prefix + fuzzy) on main,
+        // per keystroke. AutocompleteEngine is only ever touched from this one
+        // serial queue, so its lowercase cache stays single-threaded.
+        Self.autocompleteQueue.async { [weak self] in
+            let best = AutocompleteEngine.shared.suggestions(for: input, in: dir).first
+            DispatchQueue.main.async {
+                guard let self, self.lastPromptInput == input else { return }
+                guard let best else {
+                    self.clearGhostText()
+                    // clearGhostText resets lastPromptInput, which would let the
+                    // next identical evaluation re-run the whole scoring pass.
+                    self.lastPromptInput = input
+                    return
+                }
+                self.showGhostText(full: best.command, typed: input)
+            }
         }
-
-        showGhostText(full: best.command, typed: input)
     }
+
+    private static let autocompleteQueue = DispatchQueue(label: "com.notchly.Autocomplete")
 
     private func showGhostText(full command: String, typed input: String) {
         ensureGhostView()

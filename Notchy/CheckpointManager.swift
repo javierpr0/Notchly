@@ -8,10 +8,16 @@ struct Checkpoint: Identifiable {
     let date: Date
     let commitHash: String
 
+    /// Built once: DateFormatter construction is expensive and this is read
+    /// from view bodies.
+    private static let displayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE d MMM h:mma"
+        return f
+    }()
+
     var displayName: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE d MMM h:mma"
-        return formatter.string(from: date)
+        Self.displayFormatter.string(from: date)
     }
 }
 
@@ -32,13 +38,16 @@ class CheckpointManager {
 
     private let refPrefix = "refs/Notchy-snapshots"
 
-    private let dateFormatter: DateFormatter = {
+    private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd_HH-mm-ss"
         return f
     }()
 
-    private lazy var gitPath: String = {
+    /// `static let` rather than a lazy instance property: checkpoint work runs
+    /// on detached tasks, and a lazy var initialized from two threads at once
+    /// is a data race. Static initialization is thread-safe and still one-shot.
+    private static let gitPath: String = {
         // Honor the user's PATH first (e.g. asdf, mise, brew shims, custom installs),
         // then fall back to common system locations.
         if let envPath = ProcessInfo.processInfo.environment["PATH"] {
@@ -61,7 +70,7 @@ class CheckpointManager {
     @discardableResult
     private func git(_ args: [String], in directory: String, environment: [String: String]? = nil) throws -> String {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: gitPath)
+        process.executableURL = URL(fileURLWithPath: Self.gitPath)
         process.arguments = args
         process.currentDirectoryURL = URL(fileURLWithPath: directory)
         if let environment {
@@ -97,7 +106,7 @@ class CheckpointManager {
         guard !safeName.isEmpty else {
             throw CheckpointError.gitFailed("project name produces an invalid git ref")
         }
-        let timestamp = dateFormatter.string(from: Date())
+        let timestamp = Self.dateFormatter.string(from: Date())
         let refName = "\(refPrefix)/\(safeName)/\(timestamp)"
 
         // Use a temporary index file to avoid disturbing the user's staged changes.
@@ -165,7 +174,7 @@ class CheckpointManager {
             // Extract the timestamp portion from the ref name
             guard let lastSlash = refName.lastIndex(of: "/") else { return nil }
             let timestamp = String(refName[refName.index(after: lastSlash)...])
-            guard let date = dateFormatter.date(from: timestamp) else { return nil }
+            guard let date = Self.dateFormatter.date(from: timestamp) else { return nil }
             return Checkpoint(id: refName, date: date, commitHash: hash)
         }
         .sorted { $0.date > $1.date }

@@ -551,10 +551,23 @@ class SessionStore {
             return
         }
         let projectDir = (dir as NSString).deletingLastPathComponent
-        let checkpoints = CheckpointManager.shared.checkpoints(for: session.projectName, in: projectDir)
-        lastCheckpoint = checkpoints.first
-        lastCheckpointProjectName = session.projectName
-        lastCheckpointProjectDir = projectDir
+        let projectName = session.projectName
+        let sessionId = session.id
+        // `checkpoints` shells out to `git for-each-ref` and blocks on
+        // waitUntilExit. This runs on every tab switch and every panel open, so
+        // on main it stalls the UI for as long as git takes on that repo.
+        Task.detached(priority: .userInitiated) {
+            let latest = CheckpointManager.shared.checkpoints(for: projectName, in: projectDir).first
+            await MainActor.run {
+                let store = SessionStore.shared
+                // The user may have switched tabs while git ran — a late result
+                // for the previous tab must not overwrite the current one.
+                guard store.activeSessionId == sessionId else { return }
+                store.lastCheckpoint = latest
+                store.lastCheckpointProjectName = projectName
+                store.lastCheckpointProjectDir = projectDir
+            }
+        }
     }
 
     /// Restore the most recent checkpoint for the active session

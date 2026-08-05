@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct BotFaceView: View {
@@ -151,6 +152,14 @@ struct BotFaceView: View {
         blinkTask?.cancel()
         blinkTask = Task { @MainActor in
             while !Task.isCancelled {
+                // The notch pill is always on screen, so this loop runs for the
+                // whole life of the app. When nothing can see it (display
+                // asleep, app fully occluded) idle at a much lower rate instead
+                // of waking every few seconds to drive an animation.
+                guard NSApp.occlusionState.contains(.visible) else {
+                    try? await Task.sleep(for: .seconds(30))
+                    continue
+                }
                 let delay = Double.random(in: 3.0...6.0)
                 try? await Task.sleep(for: .seconds(delay))
                 guard !Task.isCancelled else { break }

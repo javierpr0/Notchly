@@ -239,10 +239,18 @@ struct SessionTab: View {
         panel.makeKeyAndOrderFront(nil)
     }
 
+    /// Runs the `git for-each-ref` lookup off the main thread — this fires on
+    /// every tab's onAppear and again on every hover, and blocking git on main
+    /// made hovering the strip hitch.
     private func refreshLatestCheckpoint() {
         guard let dir = session.projectPath else { return }
         let projectDir = (dir as NSString).deletingLastPathComponent
-        latestCheckpoint = CheckpointManager.shared.checkpoints(for: session.projectName, in: projectDir).first
+        let projectName = session.projectName
+        Task {
+            latestCheckpoint = await Task.detached(priority: .utility) {
+                CheckpointManager.shared.checkpoints(for: projectName, in: projectDir).first
+            }.value
+        }
     }
 
     @ViewBuilder

@@ -34,6 +34,11 @@ class SessionHistoryManager {
     private var openHandles: [UUID: FileHandle] = [:]
     private var handleAccessOrder: [UUID] = []
 
+    /// Bytes appended since the last size check, per session. Drives the
+    /// rotation stat instead of running one per flush.
+    private var bytesSinceSizeCheck: [UUID: Int] = [:]
+    private static let sizeCheckInterval = 1024 * 1024
+
     private init() {
         try? FileManager.default.createDirectory(
             at: baseDir,
@@ -93,14 +98,30 @@ class SessionHistoryManager {
         pending.timer?.cancel()
         guard !pending.data.isEmpty else { return }
         let path = logPath(for: sessionId)
-        let handle = handle(for: sessionId, path: path)
-        handle?.seekToEndOfFile()
-        handle?.write(pending.data)
-        // History contains raw terminal output (which can include API tokens,
-        // prompts, file contents). Force 0o600 so other local users on the
-        // machine cannot read it.
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
-        rotateIfNeeded(at: path, sessionId: sessionId)
+        guard let handle = handle(for: sessionId, path: path) else { return }
+        // The ObjC `seekToEndOfFile()`/`write(_:)` pair raises an NSException on
+        // any write error (ENOSPC on a full disk, EBADF on a stale fd). Swift
+        // cannot catch those, so they abort the process and take every terminal
+        // down with it. The throwing variants surface the same errors as Swift
+        // errors: drop the handle and the chunk, keep the app alive. The next
+        // flush reopens the file.
+        do {
+            try handle.seekToEnd()
+            try handle.write(contentsOf: pending.data)
+        } catch {
+            closeHandle(for: sessionId)
+            NSLog("Notchly: history write failed for \(sessionId): \(error)")
+            return
+        }
+        // Rotation needs the file size, and `stat` on every flush (once per
+        // 250 ms per streaming pane) buys nothing: the log can only grow by the
+        // bytes we just wrote. Only go to the filesystem once ~1 MB has piled
+        // up since the last check.
+        bytesSinceSizeCheck[sessionId, default: 0] += pending.data.count
+        if bytesSinceSizeCheck[sessionId]! >= Self.sizeCheckInterval {
+            bytesSinceSizeCheck[sessionId] = 0
+            rotateIfNeeded(at: path, sessionId: sessionId)
+        }
     }
 
     /// Reads the session log entirely off the main thread. The flush, the up-to
@@ -119,7 +140,7 @@ class SessionHistoryManager {
             var parts: [String] = []
             for paneId in paneIds {
                 flushPending(for: paneId)
-                openHandles[paneId]?.synchronizeFile()
+                try? openHandles[paneId]?.synchronize()
                 let raw = (try? String(contentsOf: logPath(for: paneId), encoding: .utf8)) ?? ""
                 let stripped = Self.stripAnsi(raw)
                 if !stripped.isEmpty { parts.append(stripped) }
@@ -135,6 +156,7 @@ class SessionHistoryManager {
                 pending.timer?.cancel()
             }
             closeHandle(for: sessionId)
+            bytesSinceSizeCheck.removeValue(forKey: sessionId)
             try? FileManager.default.removeItem(at: logPath(for: sessionId))
         }
     }
@@ -158,8 +180,13 @@ class SessionHistoryManager {
             touchHandle(sessionId)
             return existing
         }
-        // Create file with restrictive perms if missing.
-        if !FileManager.default.fileExists(atPath: path.path) {
+        // History contains raw terminal output (API tokens, prompts, file
+        // contents), so the file must stay 0600. Enforced once per handle open
+        // — a file we hold open can't change mode behind our back, and the old
+        // per-flush chmod was a syscall every 250 ms per streaming pane.
+        if FileManager.default.fileExists(atPath: path.path) {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
+        } else {
             FileManager.default.createFile(
                 atPath: path.path,
                 contents: nil,

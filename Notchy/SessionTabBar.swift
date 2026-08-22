@@ -150,6 +150,7 @@ struct SessionTabBar: View {
                 }
                 .buttonStyle(.plain)
                 .help(L10n.shared.showSleeping)
+                .accessibilityLabel(L10n.shared.showSleeping)
                 .contextMenu {
                     Button(L10n.shared.wakeAll) {
                         sessionStore.wakeAllTabs()
@@ -331,6 +332,7 @@ struct SessionTab: View {
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(DS.Color.textTertiary)
                     .help(worktreeBranch ?? "")
+                    .accessibilityLabel(worktreeBranch ?? "")
             }
 
             if isHovering {
@@ -341,6 +343,7 @@ struct SessionTab: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(L10n.shared.close)
                 .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }

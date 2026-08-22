@@ -129,7 +129,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 
     private func setupStatusItem() {
         if let button = statusItem.button {
-            button.image = NSImage(named: "menuIcon") //NSImage(systemSymbolName: "terminal", accessibilityDescription: "Notchy")
+            // Copy before mutating: the named image is cached asset-backed,
+            // and the asset catalog carries no accessibility description.
+            if let named = NSImage(named: "menuIcon"), let image = named.copy() as? NSImage {
+                image.accessibilityDescription = "Notchy"
+                button.image = image
+            }
             button.image?.isTemplate = true  // lets macOS handle light/dark mode
             button.target = self
             button.action = #selector(statusItemClicked(_:))

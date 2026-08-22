@@ -135,6 +135,7 @@ struct PanelContentView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(DS.Color.textPrimary.opacity(showSettings ? 1.0 : foregroundOpacity))
                 .help(L10n.shared.settings)
+                .accessibilityLabel(L10n.shared.settings)
                 .popover(isPresented: $showSettings, arrowEdge: .bottom) {
                     settingsMenuContent
                 }
@@ -167,6 +168,7 @@ struct PanelContentView: View {
                 }
                 .buttonStyle(.plain)
                 .help(L10n.shared.launchClaude)
+                .accessibilityLabel(L10n.shared.launchClaude)
                 .popover(isPresented: $showClaudeMenu, arrowEdge: .bottom) {
                     claudeMenuContent
                 }
@@ -178,6 +180,7 @@ struct PanelContentView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(DS.Color.textPrimary.opacity(foregroundOpacity))
                 .help(L10n.shared.newTerminal)
+                .accessibilityLabel(L10n.shared.newTerminal)
             }
         }
         .padding(.horizontal, DS.Spacing.sm)

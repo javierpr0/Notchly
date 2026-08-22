@@ -190,4 +190,11 @@ final class L10n {
     var hotkeyPermissionTitle: String { isSpanish ? "Falta un permiso para el atajo global" : "Permission needed for the global hotkey" }
     var hotkeyPermissionMessage: String { isSpanish ? "Para abrir el panel con la tecla ` desde otras apps, Notchly necesita Monitorización de Entrada. Actívala en Ajustes del Sistema." : "To open the panel with the backtick key from other apps, Notchly needs Input Monitoring. Enable it in System Settings." }
     var openSystemSettings: String { isSpanish ? "Abrir Ajustes del Sistema" : "Open System Settings" }
+
+    // MARK: - Notch pill (VoiceOver)
+
+    var statusIdle: String { isSpanish ? "Sin actividad" : "No activity" }
+    var statusWorking: String { isSpanish ? "Claude trabajando" : "Claude working" }
+    var statusWaitingForInput: String { isSpanish ? "Claude esperando tu entrada" : "Claude waiting for your input" }
+    var statusTaskCompleted: String { isSpanish ? "Tarea completada" : "Task completed" }
 }

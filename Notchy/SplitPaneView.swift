@@ -244,6 +244,7 @@ struct PaneControlsView: View {
         }
         .buttonStyle(.plain)
         .help(help)
+        .accessibilityLabel(help)
     }
 }
 

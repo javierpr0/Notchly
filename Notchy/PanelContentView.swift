@@ -73,6 +73,7 @@ struct PanelContentView: View {
     @State private var currentFontName: String? = TerminalManager.shared.fontName
     @State private var availableMonoFonts: [String] = []
     @State private var isDropTargeted = false
+    @AppStorage(AppDelegate.globalHotkeyEnabledKey) private var globalHotkeyEnabled = true
 
     private var theme: TerminalTheme { sessionStore.currentTheme }
 
@@ -691,6 +692,15 @@ struct PanelContentView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 2)
             }
+
+            Divider().padding(.vertical, 6)
+
+            Toggle(isOn: $globalHotkeyEnabled) {
+                Text(L10n.shared.hotkeySettingLabel)
+                    .font(.system(size: 12))
+            }
+            .toggleStyle(.checkbox)
+            .padding(.horizontal, 12)
 
             Divider().padding(.vertical, 6)
 

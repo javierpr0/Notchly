@@ -74,6 +74,9 @@ struct PanelContentView: View {
     @State private var availableMonoFonts: [String] = []
     @State private var isDropTargeted = false
     @AppStorage(AppDelegate.globalHotkeyEnabledKey) private var globalHotkeyEnabled = true
+    /// Refreshed each time the settings popover opens; drives the inline
+    /// Input Monitoring hint under the hotkey toggle.
+    @State private var hotkeyListenAccessGranted = true
 
     private var theme: TerminalTheme { sessionStore.currentTheme }
 
@@ -705,6 +708,28 @@ struct PanelContentView: View {
             .toggleStyle(.checkbox)
             .padding(.horizontal, 12)
 
+            if !hotkeyListenAccessGranted {
+                Button {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "lock.open")
+                            .font(.system(size: 10))
+                        Text(L10n.shared.hotkeyPermissionHint)
+                        Spacer()
+                        Text(L10n.shared.openInputMonitoringSettings)
+                            .foregroundColor(.accentColor)
+                    }
+                    .font(.system(size: 10))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 12)
+                .padding(.top, 2)
+            }
+
             Divider().padding(.vertical, 6)
 
             Button {
@@ -748,6 +773,7 @@ struct PanelContentView: View {
             // Refresh in case the user installed/uninstalled a mono font
             // since the last time the popover was shown.
             availableMonoFonts = TerminalManager.availableMonospacedFontFamilies()
+            hotkeyListenAccessGranted = CGPreflightListenEventAccess()
         }
     }
 

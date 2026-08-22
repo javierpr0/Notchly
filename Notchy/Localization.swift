@@ -187,9 +187,8 @@ final class L10n {
     // MARK: - Global hotkey
 
     var hotkeySettingLabel: String { isSpanish ? "Atajo global (tecla `)" : "Global backtick hotkey" }
-    var hotkeyPermissionTitle: String { isSpanish ? "Falta un permiso para el atajo global" : "Permission needed for the global hotkey" }
-    var hotkeyPermissionMessage: String { isSpanish ? "Para abrir el panel con la tecla ` desde otras apps, Notchly necesita Monitorización de Entrada. Actívala en Ajustes del Sistema." : "To open the panel with the backtick key from other apps, Notchly needs Input Monitoring. Enable it in System Settings." }
-    var openSystemSettings: String { isSpanish ? "Abrir Ajustes del Sistema" : "Open System Settings" }
+    var hotkeyPermissionHint: String { isSpanish ? "Requiere Monitorización de Entrada para funcionar desde otras apps" : "Needs Input Monitoring to work from other apps" }
+    var openInputMonitoringSettings: String { isSpanish ? "Abrir Monitorización de Entrada" : "Open Input Monitoring settings" }
 
     // MARK: - Notch pill (VoiceOver)
 

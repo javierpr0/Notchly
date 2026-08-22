@@ -197,6 +197,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
+    private var hotkeyDefaultsObserver: Any?
+
     static let globalHotkeyEnabledKey = "globalBacktickHotkeyEnabled"
 
     /// The monitor deliberately does NOT consume the keystroke: a consuming
@@ -204,6 +206,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
     /// in every other app. The trade-off is that, with Input Monitoring
     /// granted, the backtick both reaches the focused app and toggles the
     /// panel — documented in the settings toggle so users can turn it off.
+    ///
+    /// Without Input Monitoring the monitor silently receives nothing, so
+    /// the shortcut does nothing; the settings popover surfaces that state
+    /// next to the toggle instead of interrupting with a modal prompt.
     private func installHotkeyIfEnabled() {
         if let monitor = hotkeyMonitor {
             NSEvent.removeMonitor(monitor)
@@ -217,33 +223,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
                   event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting(.function).isEmpty
             else { return }
             DispatchQueue.main.async { self?.togglePanel() }
-        }
-        warnOnceIfListenAccessMissing()
-    }
-
-    private var didWarnAboutListenAccess = false
-    private var hotkeyDefaultsObserver: Any?
-
-    /// Without Input Monitoring the global keyDown monitor receives nothing,
-    /// so the hotkey silently does nothing. Surface that instead of leaving
-    /// the user wondering why the shortcut is dead.
-    private func warnOnceIfListenAccessMissing() {
-        guard !didWarnAboutListenAccess, !CGPreflightListenEventAccess() else { return }
-        didWarnAboutListenAccess = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
-            self?.showInputMonitoringAlert()
-        }
-    }
-
-    private func showInputMonitoringAlert() {
-        let alert = NSAlert()
-        alert.messageText = L10n.shared.hotkeyPermissionTitle
-        alert.informativeText = L10n.shared.hotkeyPermissionMessage
-        alert.addButton(withTitle: L10n.shared.openSystemSettings)
-        alert.addButton(withTitle: L10n.shared.fdaLater)
-        if alert.runModal() == .alertFirstButtonReturn,
-           let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") {
-            NSWorkspace.shared.open(url)
         }
     }
 

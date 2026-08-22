@@ -249,7 +249,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         // Strip control bytes from each dropped path before it reaches the
         // shell/Claude prompt — a filename may legally contain newline/CR/ESC
         // on APFS, none of which quoting or space-escaping contains.
-        let safePaths = items.map { TerminalManager.stripControlCharacters($0.path) }
+        let safePaths = items.map { ShellSafety.stripControlCharacters($0.path) }
         if isRunningClaudeCode() {
             let paths = safePaths.map { "@" + $0.replacingOccurrences(of: " ", with: "\\ ") }.joined(separator: " ")
             send(txt: paths)
@@ -263,49 +263,14 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     private func isRunningClaudeCode() -> Bool {
         let terminal = getTerminal()
         let startRow = max(0, terminal.rows - 5)
-        for row in startRow..<terminal.rows {
-            let trimmed = readRow(row, in: terminal).trimmingCharacters(in: .whitespaces)
-            if trimmed.contains("\u{276F}") { return true }
-            if Self.hasTokenCounterLine(trimmed) { return true }
-            if trimmed.contains("Esc to cancel") || trimmed.contains("esc to interrupt") { return true }
-        }
-        return false
-    }
-
-    /// Returns the last 20 non-blank lines from the given lines, joined by newlines.
-    private func relevantText(from lines: [String]) -> String {
-        let nonBlankLines = lines.filter { !$0.allSatisfy({ $0 == " " }) }
-        return nonBlankLines.suffix(20).joined(separator: "\n")
-    }
-
-    /// Single-pass extraction used by evaluateStatus to avoid scanning the
-    /// terminal buffer twice (visible + full + per-status checks).
-    private struct StatusSnapshot {
-        let visibleText: String
-        let fullText: String
-        let recentLines: ArraySlice<String>
+        let rows = (startRow..<terminal.rows).map { readRow($0, in: terminal) }
+        return TerminalStatusClassifier.looksLikeClaudeCode(lines: rows)
     }
 
     /// Status detection only inspects content near the bottom of the buffer
     /// (Claude's status line, prompt separator, "Esc to cancel"). Scanning the
     /// full terminal every 150ms wastes O(rows × cols) work during heavy output.
     private static let statusScanRows = 40
-
-    private func extractStatusSnapshot() -> StatusSnapshot? {
-        guard let tailLines = extractTailLines(maxRows: Self.statusScanRows) else { return nil }
-        let separator = "────────"
-        let aboveSeparator: [String]
-        if let idx = tailLines.lastIndex(where: { $0.contains(separator) }) {
-            aboveSeparator = Array(tailLines.prefix(idx))
-        } else {
-            aboveSeparator = tailLines
-        }
-        let visible = relevantText(from: aboveSeparator)
-        let full = relevantText(from: tailLines)
-        // detectError only ever needs to look at the last 25 rows.
-        let recent = tailLines.suffix(25)
-        return StatusSnapshot(visibleText: visible, fullText: full, recentLines: recent)
-    }
 
     // nonisolated: handed to translateToString, which invokes it from a
     // synchronous non-isolated context.
@@ -415,114 +380,16 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         triggerAutocomplete()
     }
 
-    private static let errorPatterns: [String] = ["error:", "failed", "permission denied"]
-    private static let errorSymbols: Set<Character> = ["\u{2717}", "\u{2718}"]
-    private static let successSymbols: Set<Character> = ["\u{2713}", "\u{2714}"]
-
     private func evaluateStatus(for id: UUID) {
-        guard let snap = extractStatusSnapshot() else { return }
-        let visibleText = snap.visibleText
-        let fullText = snap.fullText
-
-        let newStatus: TerminalStatus
-
-        if Self.hasTokenCounterLine(visibleText) || fullText.contains("esc to interrupt") {
-            newStatus = .working
-        }
-        else if fullText.contains("Esc to cancel") {
-            newStatus = .waitingForInput
-        } else if visibleText.contains("Interrupted") {
-            newStatus = .interrupted
-        } else {
-            newStatus = .idle
-        }
-
-        let summary: String? = (newStatus == .idle) ? Self.extractSummary(from: visibleText) : nil
-        let hadError: Bool = (newStatus == .idle) ? Self.detectError(in: snap.recentLines) : false
+        guard let tailLines = extractTailLines(maxRows: Self.statusScanRows) else { return }
+        let reading = TerminalStatusClassifier.evaluate(tailLines: tailLines)
 
         Task { @MainActor in
             SessionStore.shared.noteOutput(forPane: id)
-            if let summary {
-                SessionStore.shared.paneCompletionInfo[id] = PaneCompletionInfo(summary: summary, hadError: hadError)
+            if let summary = reading.summary {
+                SessionStore.shared.paneCompletionInfo[id] = PaneCompletionInfo(summary: summary, hadError: reading.hadError)
             }
-            SessionStore.shared.updateTerminalStatus(id, status: newStatus)
-        }
-    }
-
-    private static func extractSummary(from text: String) -> String? {
-        let separator = "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}"
-        let lines = text.components(separatedBy: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && !$0.hasPrefix(separator) }
-        guard let last = lines.last else { return nil }
-        // Notifications display whatever appeared on the last visible line,
-        // which is attacker-controllable (any program in the terminal can emit
-        // bidi overrides / control chars / arbitrary unicode). Strip control
-        // and bidi characters before letting the text leave the app.
-        return Self.sanitizeForDisplay(String(last.prefix(100)))
-    }
-
-    // Compiled once — sanitizeForDisplay runs on every status evaluation.
-    private static let csiRegex = try? NSRegularExpression(pattern: "\u{001B}\\[[0-?]*[ -/]*[@-~]")
-    private static let oscRegex = try? NSRegularExpression(pattern: "\u{001B}\\][^\u{0007}\u{001B}]*[\u{0007}\u{001B}]")
-
-    /// Removes ANSI escape sequences, control characters, and bidi-override
-    /// codepoints so terminal output cannot spoof or break notification text.
-    static func sanitizeForDisplay(_ input: String) -> String {
-        var stripped = input
-        // Strip CSI escape sequences (ESC [ ... letter)
-        if let regex = csiRegex {
-            let range = NSRange(stripped.startIndex..., in: stripped)
-            stripped = regex.stringByReplacingMatches(in: stripped, range: range, withTemplate: "")
-        }
-        // Strip OSC sequences (ESC ] ... BEL/ST)
-        if let regex = oscRegex {
-            let range = NSRange(stripped.startIndex..., in: stripped)
-            stripped = regex.stringByReplacingMatches(in: stripped, range: range, withTemplate: "")
-        }
-        // Drop control + bidi override + zero-width characters.
-        let blocked: Set<Unicode.Scalar> = [
-            "\u{200E}", "\u{200F}", "\u{202A}", "\u{202B}", "\u{202C}",
-            "\u{202D}", "\u{202E}", "\u{2066}", "\u{2067}", "\u{2068}", "\u{2069}",
-            "\u{200B}", "\u{200C}", "\u{200D}", "\u{FEFF}"
-        ]
-        let scalars = stripped.unicodeScalars.filter { scalar in
-            if blocked.contains(scalar) { return false }
-            // Allow tab and printable; drop other control codes
-            if scalar.value < 0x20 && scalar != "\t" { return false }
-            // DEL + C1 controls (U+007F–U+009F): U+0085 NEL and U+009B CSI are
-            // treated as line/escape introducers by some renderers, so a hostile
-            // program could spoof or break the notification line. Drop the range.
-            if scalar.value >= 0x7F && scalar.value <= 0x9F { return false }
-            return true
-        }
-        return String(String.UnicodeScalarView(scalars))
-    }
-
-    private static func detectError<S: Sequence>(in lines: S) -> Bool where S.Element == String {
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty { continue }
-            let lower = trimmed.lowercased()
-            for pattern in errorPatterns {
-                if lower.contains(pattern) { return true }
-            }
-            if let first = trimmed.first {
-                if errorSymbols.contains(first) { return true }
-            }
-        }
-        return false
-    }
-
-    /// Checks whether the text contains a Claude spinner character (visible during working state)
-    private static let spinnerCharacters: Set<Character> = ["·", "✢", "✳", "✶", "✻", "✽"]
-
-    private static func hasTokenCounterLine(_ text: String) -> Bool {
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
-        return lines.contains { line in
-            guard let first = line.first, spinnerCharacters.contains(first) else { return false }
-            guard line.dropFirst().first == " " else { return false }
-            return line.contains("…")
+            SessionStore.shared.updateTerminalStatus(id, status: reading.status)
         }
     }
 
@@ -1494,26 +1361,12 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
     }
 
     private static func validateOSC7Directory(_ raw: String) -> String? {
-        let candidate: String
-        if let url = URL(string: raw), url.scheme?.lowercased() == "file" {
-            // Accept any host that names this Mac. The shell's `$(hostname)`
-            // is typically "Foo.local" while Host.current().localizedName is
-            // the friendly "Foo Bar's MacBook" — neither matches the other,
-            // so we accept any of the system's known names plus the loopback
-            // synonyms. Path existence + isDirectory below is the real
-            // safety check.
-            let host = url.host?.lowercased() ?? ""
-            let acceptable = Self.localHostNames()
-            if !host.isEmpty,
-               host != "localhost",
-               host != "127.0.0.1",
-               !acceptable.contains(host) {
-                return nil
-            }
-            candidate = url.path
-        } else if raw.hasPrefix("/") {
-            candidate = raw
-        } else {
+        // Accept any host that names this Mac. The shell's `$(hostname)` is
+        // typically "Foo.local" while Host.current().localizedName is the
+        // friendly "Foo Bar's MacBook" — neither matches the other, so we
+        // accept any of the system's known names plus the loopback synonyms.
+        // Path existence + isDirectory below is the real safety check.
+        guard let candidate = ShellSafety.osc7Path(from: raw, localHostNames: Self.localHostNames()) else {
             return nil
         }
         var isDir: ObjCBool = false
@@ -1631,7 +1484,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         env["LANG"] = env["LANG"] ?? "en_US.UTF-8"
         env["TERM_PROGRAM"] = "Apple_Terminal"
         if let extra {
-            for (key, value) in extra where Self.isSafeEnvKey(key) {
+            for (key, value) in extra where ShellSafety.isSafeEnvKey(key) {
                 env[key] = value
             }
         }
@@ -1639,47 +1492,13 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
     }
 
     private func shellEscape(_ path: String) -> String {
-        "'" + Self.stripControlCharacters(path).replacingOccurrences(of: "'", with: "'\\''") + "'"
-    }
-
-    /// Removes C0 control bytes (0x00–0x1F) and DEL (0x7F) from a string.
-    /// Single-quote escaping neutralizes shell metacharacters but NOT control
-    /// bytes: a newline/CR embedded in a path is delivered to the interactive
-    /// shell's line editor as an Enter keypress, and an ESC byte can inject a
-    /// terminal control sequence — neither is contained by quoting. Any path
-    /// that reaches `send(txt:)` must be stripped first.
-    static func stripControlCharacters(_ s: String) -> String {
-        String(s.unicodeScalars.filter { $0.value >= 0x20 && $0.value != 0x7F })
+        ShellSafety.escape(path)
     }
 
     // MARK: - .notchy.json security gates
 
-    /// Standard directories where a shell binary is acceptable. A `.notchy.json`
-    /// pointing to anything outside these (e.g. `/tmp/evil`) is rejected.
-    private static let allowedShellDirectories: [String] = [
-        "/bin/", "/usr/bin/", "/usr/local/bin/", "/opt/homebrew/bin/"
-    ]
-
-    /// Env keys that influence process loading or critical paths — never let
-    /// a project config override these.
-    private static let blockedEnvKeys: Set<String> = [
-        "PATH", "SHELL", "HOME", "USER", "LOGNAME", "TMPDIR", "IFS",
-        // Shell startup-file hijacks: a login shell reads these BEFORE any
-        // command is typed, so allowing them turns a project's env config into
-        // arbitrary pre-execution (e.g. ZDOTDIR → $ZDOTDIR/.zshenv).
-        "ZDOTDIR", "BASH_ENV", "ENV"
-    ]
-    private static let blockedEnvPrefixes: [String] = ["DYLD_", "LD_"]
-
-    private static func isSafeEnvKey(_ key: String) -> Bool {
-        if blockedEnvKeys.contains(key) { return false }
-        if blockedEnvPrefixes.contains(where: { key.hasPrefix($0) }) { return false }
-        return true
-    }
-
     private static func isAllowedShell(_ path: String) -> Bool {
-        guard !path.contains(".."), !path.contains("\0") else { return false }
-        guard allowedShellDirectories.contains(where: { path.hasPrefix($0) }) else { return false }
+        guard ShellSafety.isAllowedShellPath(path) else { return false }
         return FileManager.default.isExecutableFile(atPath: path)
     }
 
@@ -1699,7 +1518,7 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
             }
         }
 
-        let filteredEnv = config.env?.filter { Self.isSafeEnvKey($0.key) }
+        let filteredEnv = config.env?.filter { ShellSafety.isSafeEnvKey($0.key) }
 
         return ProjectConfig(
             shell: safeShell,

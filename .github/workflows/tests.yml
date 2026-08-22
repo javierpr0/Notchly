@@ -1,0 +1,25 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      # The test target compiles the pure-logic sources directly, so it needs
+      # neither the app host nor SwiftTerm/Sparkle.
+      - name: Run unit tests
+        run: |
+          xcodebuild test \
+            -project Notchy.xcodeproj \
+            -scheme NotchlyTests \
+            -destination "platform=macOS" \
+            CODE_SIGNING_REQUIRED=NO

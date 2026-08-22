@@ -335,7 +335,7 @@ class SessionStore {
         // archive) and flows into notifications, the tab strip and menus.
         // Strip bidi-override / zero-width / control codepoints so it can't
         // spoof that UI (Trojan-Source style).
-        let name = ClickThroughTerminalView.sanitizeForDisplay((dir as NSString).lastPathComponent)
+        let name = ShellSafety.sanitizeForDisplay((dir as NSString).lastPathComponent)
         let session = TerminalSession(
             projectName: name.isEmpty ? "Terminal" : name,
             projectPath: dir,
@@ -406,7 +406,7 @@ class SessionStore {
 
     func renameSession(_ id: UUID, to newName: String) {
         guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
-        sessions[index].projectName = ClickThroughTerminalView.sanitizeForDisplay(newName)
+        sessions[index].projectName = ShellSafety.sanitizeForDisplay(newName)
         persistSessions()
     }
 

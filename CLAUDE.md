@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Mandatory verification
+
+**Every change must be verified with a build and the test suite before the
+work is considered done.** Run both commands from [Build](#build) and
+[Tests](#tests) below after any code or project edit; a change is not
+finished until the build succeeds and all `NotchlyTests` pass.
+
 ## Build
 
 Open `Notchy.xcodeproj` in Xcode and build (Cmd+B). Or from the command line:
@@ -10,7 +17,33 @@ Open `Notchy.xcodeproj` in Xcode and build (Cmd+B). Or from the command line:
 xcodebuild -project Notchy.xcodeproj -scheme Notchy -configuration Debug build
 ```
 
-There are no tests or linting configured yet.
+There is no linting configured.
+
+## Tests
+
+```bash
+xcodebuild test -project Notchy.xcodeproj -scheme NotchlyTests -destination "platform=macOS"
+```
+
+**Every new capability ships with a test.** No exceptions: a change that adds
+or alters behaviour is not done until a test covers it.
+
+The `NotchlyTests` target has no app host and links neither SwiftTerm nor
+Sparkle. Instead it compiles a short list of pure-logic sources directly
+(declared in the target's `Sources` build phase in `project.pbxproj`), so the
+whole suite runs in well under a second. Test files themselves live in
+`NotchlyTests/` and are picked up automatically by the synchronized folder.
+
+Consequence for design: **logic that needs a test must be reachable without
+AppKit or SwiftTerm.** When adding a feature, put the decision-making part in
+a plain type (see `TerminalStatusClassifier`, `ShellSafety`,
+`AutocompleteRanker`) and keep the view/window layer as a thin caller. To
+cover a new file, add a `PBXFileReference` + `PBXBuildFile` pair for it and
+list it in the `NotchlyTests` `Sources` phase, next to the existing entries.
+
+Currently covered: split-pane tree operations, session status aggregation and
+persistence, terminal status detection, shell/env/OSC 7 security gates, and
+autocomplete ranking.
 
 ## Overview
 

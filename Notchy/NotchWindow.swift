@@ -13,7 +13,8 @@ class NotchWindow: NSPanel {
     /// mouse-move and every proximity event. Refreshed only when the screen
     /// configuration actually changes (see `observeScreenChanges`).
     private var cachedBuiltInScreen: NSScreen?
-    private var currentDisplayLink: CVDisplayLinkWrapper?
+    /// Single reusable display-link driver for the expand/collapse animations.
+    private let frameAnimator = DisplayLinkAnimator()
     var onHover: (() -> Void)?
     /// Additional rects (in screen coordinates) that should also trigger hover.
     /// Each closure is called at check-time so the rect stays up-to-date.
@@ -195,10 +196,7 @@ class NotchWindow: NSPanel {
         let startTime = CACurrentMediaTime()
         let duration: Double = 0.5
 
-        // Cancel any previous animation so two wrappers don't fight over the
-        // window frame each refresh cycle.
-        currentDisplayLink?.stop()
-        let displayLink = CVDisplayLinkWrapper { [weak self] in
+        frameAnimator.start { [weak self] in
             guard let self else { return false }
             let elapsed = CACurrentMediaTime() - startTime
             let t = min(elapsed / duration, 1.0)
@@ -217,8 +215,6 @@ class NotchWindow: NSPanel {
             }
             return t < 1.0
         }
-        currentDisplayLink = displayLink
-        displayLink.start()
     }
 
     private func collapse() {
@@ -247,8 +243,7 @@ class NotchWindow: NSPanel {
         let startTime = CACurrentMediaTime()
         let duration: Double = 0.3
 
-        currentDisplayLink?.stop()
-        let displayLink = CVDisplayLinkWrapper { [weak self] in
+        frameAnimator.start { [weak self] in
             guard let self else { return false }
             let elapsed = CACurrentMediaTime() - startTime
             let t = min(elapsed / duration, 1.0)
@@ -271,8 +266,6 @@ class NotchWindow: NSPanel {
             }
             return t < 1.0
         }
-        currentDisplayLink = displayLink
-        displayLink.start()
     }
 
     /// Spring / bounce easing — overshoots slightly then settles. Tuned for
@@ -307,6 +300,10 @@ class NotchWindow: NSPanel {
 
     private func positionAtNotch() {
         guard let screen = NSScreen.builtIn else { return }
+        // A reposition (launch, display change) cancels any in-flight
+        // animation, which would otherwise keep snapping back to stale
+        // screen coordinates.
+        frameAnimator.stop()
         let screenFrame = screen.frame
         let x = screenFrame.midX - notchWidth / 2
         let y = screenFrame.maxY - notchHeight
@@ -445,12 +442,16 @@ class NotchWindow: NSPanel {
     }
 
     private func hoverGrow() {
+        // Manual input wins over an in-flight animation: without stopping it,
+        // the next animation tick would overwrite this frame.
+        frameAnimator.stop()
         pillView.isHovered = true
         pillContentHost?.rootView = NotchPillContent(isHovering: true)
         setFrame(applyHoverGrow(to: frame), display: true)
     }
 
     private func hoverShrink() {
+        frameAnimator.stop()
         pillView.isHovered = false
         pillContentHost?.rootView = NotchPillContent(isHovering: false)
         guard let screen = NSScreen.builtIn else { return }
@@ -702,34 +703,55 @@ struct NotchPillContent: View {
 // MARK: - CVDisplayLink wrapper for smooth animation
 
 /// Drives a frame-by-frame animation callback on the display refresh rate.
-class CVDisplayLinkWrapper {
+///
+/// One long-lived instance per window: `start(_:)` replaces any in-flight
+/// handler, so successive animations never fight over the window frame.
+/// The handler/running pair is guarded by a lock because the CoreVideo
+/// callback fires on its own thread — the previous plain `Bool` flag was
+/// an unsynchronized cross-thread write.
+final class DisplayLinkAnimator {
     private var displayLink: CVDisplayLink?
-    private let callback: () -> Bool  // return true to keep running
-    private var stopped = false
+    private let stateLock = NSLock()
+    private var handler: (() -> Bool)?  // return true to keep running
+    private var running = false
     /// Opaque pointer to the retained `self` reference handed to the CoreVideo
     /// callback. Kept so `stop()` can balance the retain even when the callback
     /// is never invoked (e.g. display sleep, external stop before first tick).
     private var retainedSelfPointer: UnsafeMutableRawPointer?
 
-    init(callback: @escaping () -> Bool) {
-        self.callback = callback
-    }
+    /// Starts (or replaces) the current animation handler.
+    func start(_ handler: @escaping () -> Bool) {
+        stop()
+        stateLock.lock()
+        self.handler = handler
+        running = true
+        stateLock.unlock()
 
-    func start() {
-        guard !stopped else { return }
         CVDisplayLinkCreateWithActiveCGDisplays(&displayLink)
-        guard let displayLink else { return }
+        guard let displayLink else {
+            stateLock.lock()
+            running = false
+            self.handler = nil
+            stateLock.unlock()
+            return
+        }
 
         let opaqueWrapper = Unmanaged.passRetained(self)
         retainedSelfPointer = opaqueWrapper.toOpaque()
         CVDisplayLinkSetOutputCallback(displayLink, { (_, _, _, _, _, userInfo) -> CVReturn in
             guard let userInfo else { return kCVReturnError }
-            let wrapper = Unmanaged<CVDisplayLinkWrapper>.fromOpaque(userInfo).takeUnretainedValue()
-            guard !wrapper.stopped else { return kCVReturnSuccess }
-            let keepRunning = wrapper.callback()
+            let animator = Unmanaged<DisplayLinkAnimator>.fromOpaque(userInfo).takeUnretainedValue()
+
+            animator.stateLock.lock()
+            let currentHandler = animator.handler
+            let active = animator.running
+            animator.stateLock.unlock()
+            guard active, let currentHandler else { return kCVReturnSuccess }
+
+            let keepRunning = currentHandler()
             if !keepRunning {
                 DispatchQueue.main.async {
-                    wrapper.stop()
+                    animator.stop()
                 }
             }
             return kCVReturnSuccess
@@ -739,23 +761,26 @@ class CVDisplayLinkWrapper {
     }
 
     func stop() {
-        guard !stopped else { return }
-        stopped = true
+        stateLock.lock()
+        let wasRunning = running
+        running = false
+        handler = nil
+        stateLock.unlock()
+
         if let displayLink {
             CVDisplayLinkStop(displayLink)
         }
         displayLink = nil
         if let pointer = retainedSelfPointer {
             retainedSelfPointer = nil
-            Unmanaged<CVDisplayLinkWrapper>.fromOpaque(pointer).release()
+            Unmanaged<DisplayLinkAnimator>.fromOpaque(pointer).release()
         }
     }
 
     deinit {
-        // Safety net: if the wrapper is being deallocated, the retained reference
-        // must have already been released (otherwise we wouldn't be deiniting),
-        // but make absolutely sure the CVDisplayLink is stopped.
-        if let displayLink, !stopped {
+        // Safety net: make absolutely sure the CVDisplayLink is stopped even
+        // if stop() was never called.
+        if let displayLink {
             CVDisplayLinkStop(displayLink)
         }
     }

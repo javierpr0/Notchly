@@ -1005,7 +1005,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
 
     @objc private func pasteFromClipboard() {
         guard let text = NSPasteboard.general.string(forType: .string) else { return }
-        send(txt: text)
+        send(txt: ShellSafety.sanitizePastedText(text))
     }
 }
 

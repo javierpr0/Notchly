@@ -41,6 +41,35 @@ final class ShellSafetyTests: XCTestCase {
         XCTAssertEqual(ShellSafety.stripControlCharacters("a\tb"), "ab", "tab is a C0 byte and goes too")
     }
 
+    // MARK: - Clipboard paste gate
+
+    /// Multiline paste is legitimate — each newline behaves like pressing
+    /// Enter, exactly as if the user had typed it.
+    func testPastedTextKeepsNewlinesAndTabs() {
+        let script = "echo one\necho two\n\tindented"
+        XCTAssertEqual(ShellSafety.sanitizePastedText(script), script)
+    }
+
+    /// The clipboard is attacker-influenced (websites write to it), so an ESC
+    /// byte must not survive: without it a CSI/OSC payload degrades to inert
+    /// printable characters the shell treats as ordinary typed text.
+    func testPastedTextStripsEscapeSequencesAndCarriageReturns() {
+        XCTAssertEqual(
+            ShellSafety.sanitizePastedText("safe\u{001B}[31mdanger\u{001B}]0;pwn\u{0007}text"),
+            "safe[31mdanger]0;pwntext",
+            "the ESC introducer must be gone even if its payload remains as plain text"
+        )
+        XCTAssertFalse(ShellSafety.sanitizePastedText("a\u{001B}b").unicodeScalars.contains("\u{001B}"))
+        XCTAssertEqual(ShellSafety.sanitizePastedText("one\r\ntwo"), "one\ntwo", "CRLF must not double-fire Enter")
+        XCTAssertFalse(ShellSafety.sanitizePastedText("a\u{009B}b").unicodeScalars.contains("\u{009B}"),
+                       "C1 CSI survives some renderers as an escape introducer")
+    }
+
+    func testPastedTextDropsOtherC0ControlsAndDel() {
+        let sanitized = ShellSafety.sanitizePastedText("a\u{0007}b\u{0000}c\u{007F}d")
+        XCTAssertEqual(sanitized, "abcd")
+    }
+
     // MARK: - Text leaving the app
 
     func testSanitizeStripsAnsiSequences() {

@@ -59,6 +59,19 @@ enum ShellSafety {
         String(s.unicodeScalars.filter { $0.value >= 0x20 && $0.value != 0x7F })
     }
 
+    /// Sanitizes clipboard text before it reaches `send(txt:)`. Like paths,
+    /// clipboard content is attacker-influenced (a web page can put anything
+    /// on the pasteboard), so ESC bytes that would inject terminal control
+    /// sequences are stripped. Unlike paths, newlines and tabs are preserved:
+    /// multiline paste is a legitimate workflow — each newline behaves like
+    /// pressing Enter, exactly as if the user had typed it.
+    static func sanitizePastedText(_ s: String) -> String {
+        String(s.unicodeScalars.filter { scalar in
+            if scalar == "\n" || scalar == "\t" { return true }
+            return scalar.value >= 0x20 && !(0x7F...0x9F).contains(scalar.value)
+        })
+    }
+
     /// Single-quotes a path for an interactive shell, closing and reopening the
     /// quote around each embedded quote (`'\''`).
     static func escape(_ path: String) -> String {

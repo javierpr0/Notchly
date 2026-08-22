@@ -118,11 +118,12 @@ class SessionStore {
     /// Tasks whose working phase was shorter than this don't emit a
     /// "task completed" pill/notification — avoids noise from trivial commands.
     private static let minTaskWorkDuration: TimeInterval = 7
-    private static let sessionsKey = "persistedSessions"
-    private static let activeSessionKey = "activeSessionId"
     private static let persistDebounceInterval: TimeInterval = 1.5
 
     private var persistDebounceTask: DispatchWorkItem?
+    /// Set once the first successful file write has retired the legacy
+    /// UserDefaults blob.
+    private var hasMigratedLegacyStore = false
 
     init() {
         restoreSessions()
@@ -165,26 +166,12 @@ class SessionStore {
     // MARK: - Session Persistence
 
     private func restoreSessions() {
-        guard let data = UserDefaults.standard.data(forKey: Self.sessionsKey) else { return }
-        let persisted: [PersistedSession]
-        do {
-            persisted = try JSONDecoder().decode([PersistedSession].self, from: data)
-        } catch {
-            logger.error("Failed to decode persisted sessions: \(error.localizedDescription, privacy: .public)")
-            // Preserve the corrupt blob so we can inspect it later instead of
-            // silently dropping the user's saved sessions.
-            UserDefaults.standard.set(data, forKey: Self.sessionsKey + ".corrupt")
-            return
-        }
-        guard !persisted.isEmpty else { return }
-        sessions = persisted.map { TerminalSession(persisted: $0) }
-        if let savedId = UserDefaults.standard.string(forKey: Self.activeSessionKey),
-           let uuid = UUID(uuidString: savedId),
-           sessions.contains(where: { $0.id == uuid }) {
-            activeSessionId = uuid
-        } else {
-            activeSessionId = sessions.first?.id
-        }
+        // File store first; fall back to the pre-file UserDefaults blob so
+        // existing installs migrate transparently on this launch.
+        guard let loaded = SessionPersistence.load() ?? SessionPersistence.legacyStore(in: .standard),
+              !loaded.sessions.isEmpty else { return }
+        sessions = loaded.sessions.map { TerminalSession(persisted: $0) }
+        activeSessionId = loaded.activeSessionId ?? sessions.first?.id
         // Mark all restored sessions as started so terminals launch immediately
         for i in sessions.indices {
             sessions[i].hasStarted = true
@@ -214,17 +201,19 @@ class SessionStore {
     }
 
     private func persistNow() {
-        let persisted = sessions.map(PersistedSession.init(from:))
         do {
-            let data = try JSONEncoder().encode(persisted)
-            UserDefaults.standard.set(data, forKey: Self.sessionsKey)
+            try SessionPersistence.save(sessions.map(PersistedSession.init(from:)),
+                                        activeSessionId: activeSessionId)
         } catch {
-            logger.error("Failed to encode sessions for persistence: \(error.localizedDescription, privacy: .public)")
+            logger.error("Failed to persist sessions: \(error.localizedDescription, privacy: .public)")
+            return
         }
-        if let activeId = activeSessionId {
-            UserDefaults.standard.set(activeId.uuidString, forKey: Self.activeSessionKey)
-        } else {
-            UserDefaults.standard.removeObject(forKey: Self.activeSessionKey)
+        // First successful file write retires the legacy UserDefaults blob so
+        // there is exactly one source of truth from here on.
+        if !hasMigratedLegacyStore {
+            hasMigratedLegacyStore = true
+            UserDefaults.standard.removeObject(forKey: "persistedSessions")
+            UserDefaults.standard.removeObject(forKey: "activeSessionId")
         }
     }
 

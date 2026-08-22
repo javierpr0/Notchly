@@ -15,6 +15,7 @@
 		BE0000140000000000000014 /* ShellSafety.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0000040000000000000004 /* ShellSafety.swift */; };
 		BE0000150000000000000015 /* StoredCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0000050000000000000005 /* StoredCommand.swift */; };
 		BE0000160000000000000016 /* AutocompleteRanker.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0000060000000000000006 /* AutocompleteRanker.swift */; };
+		BE0000170000000000000017 /* SessionPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0000070000000000000007 /* SessionPersistence.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +26,7 @@
 		BE0000040000000000000004 /* ShellSafety.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ShellSafety.swift; path = Notchy/ShellSafety.swift; sourceTree = SOURCE_ROOT; };
 		BE0000050000000000000005 /* StoredCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = StoredCommand.swift; path = Notchy/StoredCommand.swift; sourceTree = SOURCE_ROOT; };
 		BE0000060000000000000006 /* AutocompleteRanker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AutocompleteRanker.swift; path = Notchy/AutocompleteRanker.swift; sourceTree = SOURCE_ROOT; };
+		BE0000070000000000000007 /* SessionPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SessionPersistence.swift; path = Notchy/SessionPersistence.swift; sourceTree = SOURCE_ROOT; };
 		BE00000A000000000000000A /* NotchlyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NotchlyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -95,6 +97,7 @@
 				BE0000040000000000000004 /* ShellSafety.swift */,
 				BE0000050000000000000005 /* StoredCommand.swift */,
 				BE0000060000000000000006 /* AutocompleteRanker.swift */,
+				BE0000070000000000000007 /* SessionPersistence.swift */,
 			);
 			name = "Tested Sources";
 			sourceTree = "<group>";
@@ -215,6 +218,7 @@
 				BE0000140000000000000014 /* ShellSafety.swift in Sources */,
 				BE0000150000000000000015 /* StoredCommand.swift in Sources */,
 				BE0000160000000000000016 /* AutocompleteRanker.swift in Sources */,
+				BE0000170000000000000017 /* SessionPersistence.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

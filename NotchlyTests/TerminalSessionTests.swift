@@ -80,6 +80,7 @@ final class TerminalSessionTests: XCTestCase {
         original.focusedPaneId = second
         original.isSleeping = true
         original.notificationsMuted = true
+        original.customCommand = "claude --resume"
 
         let persisted = PersistedSession(
             id: original.id,
@@ -90,6 +91,7 @@ final class TerminalSessionTests: XCTestCase {
             focusedPaneId: original.focusedPaneId,
             isSleeping: original.isSleeping,
             notificationsMuted: original.notificationsMuted,
+            customCommand: original.customCommand,
             worktreeBranch: nil,
             worktreeRepoRoot: nil
         )
@@ -121,5 +123,31 @@ final class TerminalSessionTests: XCTestCase {
         XCTAssertEqual(restored.splitRoot.workingDirectory(for: restored.focusedPaneId), "/legacy")
         XCTAssertFalse(restored.isSleeping)
         XCTAssertFalse(restored.notificationsMuted)
+    }
+
+    /// A tab launched with a custom command (e.g. `claude --resume`) must come
+    /// back as that command after a relaunch instead of reverting to a shell.
+    func testCustomCommandSurvivesPersistenceRoundTrip() {
+        let original = TerminalSession(
+            projectName: "demo", projectPath: "/proj",
+            customCommand: "claude --resume"
+        )
+
+        let data = try! JSONEncoder().encode(PersistedSession(from: original))
+        let restored = TerminalSession(
+            persisted: try! JSONDecoder().decode(PersistedSession.self, from: data)
+        )
+
+        XCTAssertEqual(restored.customCommand, "claude --resume")
+    }
+
+    func testCustomCommandIsOptionalInLegacyPayloads() {
+        let legacy = """
+        {"id":"\(UUID().uuidString)","projectName":"old","workingDirectory":"/legacy"}
+        """.data(using: .utf8)!
+
+        let decoded = try! JSONDecoder().decode(PersistedSession.self, from: legacy)
+        XCTAssertNil(decoded.customCommand)
+        XCTAssertNil(TerminalSession(persisted: decoded).customCommand)
     }
 }

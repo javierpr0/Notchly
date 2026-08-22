@@ -214,17 +214,7 @@ class SessionStore {
     }
 
     private func persistNow() {
-        let persisted = sessions.map {
-            PersistedSession(
-                id: $0.id, projectName: $0.projectName, projectPath: $0.projectPath,
-                workingDirectory: $0.workingDirectory,
-                splitRoot: $0.splitRoot, focusedPaneId: $0.focusedPaneId,
-                isSleeping: $0.isSleeping ? true : nil,
-                notificationsMuted: $0.notificationsMuted ? true : nil,
-                worktreeBranch: $0.worktreeBranch,
-                worktreeRepoRoot: $0.worktreeRepoRoot
-            )
-        }
+        let persisted = sessions.map(PersistedSession.init(from:))
         do {
             let data = try JSONEncoder().encode(persisted)
             UserDefaults.standard.set(data, forKey: Self.sessionsKey)
@@ -501,10 +491,12 @@ class SessionStore {
         // the old check read `now − start` inside the delayed task, so the 3 s
         // confirmation sleep inflated it and suppressed real short tasks.
         if status == .idle && oldPaneStatus == .working {
+            let sessionId = sessions[index].id
             let workDuration = sessions[index].paneWorkingStartedAt[paneId].map { Date().timeIntervalSince($0) }
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .seconds(3))
-                guard let idx = self.sessions.firstIndex(where: { $0.id == sessionId }),
+                guard let self,
+                      let idx = self.sessions.firstIndex(where: { $0.id == sessionId }),
                       self.sessions[idx].paneStatuses[paneId] == .idle else { return }
                 if let d = workDuration, d < Self.minTaskWorkDuration { return }
                 self.updateTerminalStatus(paneId, status: .taskCompleted)

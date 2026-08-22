@@ -112,6 +112,7 @@ struct TerminalSession: Identifiable {
         self.createdAt = Date()
         self.isSleeping = persisted.isSleeping ?? false
         self.notificationsMuted = persisted.notificationsMuted ?? false
+        self.customCommand = persisted.customCommand
         self.worktreeBranch = persisted.worktreeBranch
         self.worktreeRepoRoot = persisted.worktreeRepoRoot
 
@@ -138,6 +139,23 @@ struct PersistedSession: Codable {
     let focusedPaneId: UUID?
     let isSleeping: Bool?
     let notificationsMuted: Bool?
+    let customCommand: String?
     let worktreeBranch: String?
     let worktreeRepoRoot: String?
+}
+
+extension PersistedSession {
+    /// Captures the durable state of a live session.
+    init(from s: TerminalSession) {
+        self.init(
+            id: s.id, projectName: s.projectName, projectPath: s.projectPath,
+            workingDirectory: s.workingDirectory,
+            splitRoot: s.splitRoot, focusedPaneId: s.focusedPaneId,
+            isSleeping: s.isSleeping ? true : nil,
+            notificationsMuted: s.notificationsMuted ? true : nil,
+            customCommand: s.customCommand,
+            worktreeBranch: s.worktreeBranch,
+            worktreeRepoRoot: s.worktreeRepoRoot
+        )
+    }
 }

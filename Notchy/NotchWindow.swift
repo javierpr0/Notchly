@@ -475,6 +475,9 @@ class NotchWindow: NSPanel {
             object: nil,
             queue: .main
         ) { [weak self] _ in
+            // The built-in screen may have changed identity (clamshell,
+            // hot-plug, mirror switch) — the cache must not survive it.
+            self?.cachedBuiltInScreen = nil
             self?.detectNotchSize()
             self?.positionAtNotch()
         }

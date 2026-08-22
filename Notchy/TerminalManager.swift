@@ -15,6 +15,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     var isInitializing = false
     private var dataReceivedCount = 0
     private var pendingRedrawFlush = false
+    private var initFailsafeTimer: Timer?
 
     /// Hides the view and re-arms the init gate so the next `cd && clear`
     /// sequence reveals it cleanly. Must reset `dataReceivedCount` too — a
@@ -25,6 +26,26 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         alphaValue = 0
         isInitializing = true
         dataReceivedCount = 0
+        armInitFailsafe()
+    }
+
+    /// A shell that execs but produces fewer than four coalesced output
+    /// chunks (a bare prompt, a silent motd) would stay invisible forever:
+    /// the reveal gate only counts data. Two seconds is far beyond any real
+    /// init sequence, so firing means something went wrong — reveal anyway.
+    private func armInitFailsafe() {
+        initFailsafeTimer?.invalidate()
+        let timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
+            guard let self, self.isInitializing else { return }
+            self.revealAfterFailedSpawn(message: "Shell produced no output — revealing pane anyway.")
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        initFailsafeTimer = timer
+    }
+
+    private func cancelInitFailsafe() {
+        initFailsafeTimer?.invalidate()
+        initFailsafeTimer = nil
     }
 
     /// Forces the reveal when the shell dies without ever producing output
@@ -33,6 +54,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     /// Writes an inline notice so the blank pane explains itself.
     func revealAfterFailedSpawn(message: String) {
         isInitializing = false
+        cancelInitFailsafe()
         Task { @MainActor in
             self.alphaValue = 1
             self.feed(text: "\r\n[Notchly] \(message)\r\n")
@@ -107,6 +129,8 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         statusDebounceTimer = nil
         autocompleteDebounceTimer?.invalidate()
         autocompleteDebounceTimer = nil
+        initFailsafeTimer?.invalidate()
+        initFailsafeTimer = nil
         if let monitor = keyMonitor {
             NSEvent.removeMonitor(monitor)
         }
@@ -328,6 +352,10 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     }
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
+        // SwiftTerm delivers process output on the main queue by default;
+        // timers, redraw coalescing and alpha writes below all depend on it.
+        // Assert it so a future non-main dispatchQueue fails loudly in debug.
+        dispatchPrecondition(condition: .onQueue(.main))
         super.dataReceived(slice: slice)
 
         guard let id = sessionId else { return }
@@ -344,6 +372,7 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
             dataReceivedCount += 1
             if dataReceivedCount >= 4 {
                 isInitializing = false
+                cancelInitFailsafe()
                 Task { @MainActor in
                     self.alphaValue = 1
                     // Invalidations coalesced while alpha was 0 may have been

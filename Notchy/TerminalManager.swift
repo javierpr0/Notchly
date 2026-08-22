@@ -27,6 +27,19 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         dataReceivedCount = 0
     }
 
+    /// Forces the reveal when the shell dies without ever producing output
+    /// (failed exec, rejected config shell): the data-chunk gate in
+    /// `dataReceived` would otherwise keep this pane invisible forever.
+    /// Writes an inline notice so the blank pane explains itself.
+    func revealAfterFailedSpawn(message: String) {
+        isInitializing = false
+        Task { @MainActor in
+            self.alphaValue = 1
+            self.feed(text: "\r\n[Notchly] \(message)\r\n")
+            self.setNeedsDisplay(self.bounds)
+        }
+    }
+
     // Autocomplete state
     private var autocompleteDebounceTimer: Timer?
     private var lastPromptInput: String = ""
@@ -1417,6 +1430,11 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         // no-ops for sleeping sessions (guarded in updateTerminalStatus).
         guard let paneId = view.sessionId else { return }
         terminals.removeValue(forKey: paneId)
+        if view.isInitializing {
+            view.revealAfterFailedSpawn(
+                message: "Shell exited \(exitCode.map { "with code \($0)" } ?? "before starting") — check .notchy.json or reopen this tab."
+            )
+        }
         Task { @MainActor in
             SessionStore.shared.updateTerminalStatus(paneId, status: .idle)
         }

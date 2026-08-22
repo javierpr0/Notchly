@@ -7,6 +7,8 @@ class CommandStore {
 
     private static let maxCommandsPerDirectory = 500
     private static let maxCachedDirectories = 32
+    /// Command files untouched for this long get pruned at launch.
+    private static let staleFileAge: TimeInterval = 90 * 24 * 3600
 
     private let baseDir: URL = {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -52,6 +54,16 @@ class CommandStore {
             forName: NSApplication.willTerminateNotification,
             object: nil, queue: nil
         ) { [weak self] _ in self?.flushSync() }
+
+        // Housekeeping: every directory ever visited leaves a seeded command
+        // file behind. Prune the ones untouched for months, off the hot path.
+        queue.async { [weak self] in
+            guard let self else { return }
+            StaleFilePruner.prune(
+                in: self.baseDir,
+                olderThan: Date().addingTimeInterval(-Self.staleFileAge)
+            )
+        }
     }
 
     deinit {

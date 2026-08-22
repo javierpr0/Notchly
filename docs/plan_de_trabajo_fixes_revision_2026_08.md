@@ -67,3 +67,23 @@
 - Build Debug: OK tras cada fase.
 - Suite: 89 tests, 0 fallos (aserciones nuevas de createdAt dentro de tests existentes).
 - Commits pendientes de autorización explícita del usuario.
+
+---
+
+# Tanda 3
+
+### Fase 10 - Carrera de isShowingDialog
+- [x] Nuevo DialogVisibilityRegistry (tipo puro testeable) en TerminalSession.swift
+- [x] SessionStore expone setDialogVisible(_:owner:) y isShowingDialog derivado
+- [x] PanelContentView y SessionTabBar reportan por owner; cleanup onDisappear y al cerrar sesión
+- [x] Tests (3): composición de owners concurrentes, idempotencia, limpieza por prefijo
+
+### Fase 11 - Shortcuts vs campos de texto + Cmd+W
+- [x] performKeyEquivalent devuelve super si hay NSText/NSTextView/NSTextField como firstResponder
+- [x] Cmd+W cierra el panel enfocado (Cmd+Shift+W se mantiene)
+
+### Fase 12 - Capado de escaneo del menú contextual
+- [x] Búsqueda de prompt limitada a 1000 filas atrás; bloque acotado a 2000 filas
+
+### Fase 13 - flushSync en cada cmd-tab
+- [x] Eliminado observer willResignActive de CommandStore; queda el flush en willTerminate

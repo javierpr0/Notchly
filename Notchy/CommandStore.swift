@@ -28,7 +28,6 @@ class CommandStore {
     private var zshLoadStarted = false
     private var pendingSeedDirs: [String] = []
     private var terminateObserver: NSObjectProtocol?
-    private var resignActiveObserver: NSObjectProtocol?
 
     private init() {
         try? FileManager.default.createDirectory(
@@ -44,21 +43,19 @@ class CommandStore {
         // quit), make sure any in-flight async writes complete on app exit.
         // Block-based observers don't require NSObject inheritance — the
         // selector-based form silently failed at runtime when this class
-        // was a plain Swift class.
+        // was a plain Swift class. Deliberately NOT observing resign-active:
+        // that fires on every cmd-tab and flushSync would block the main
+        // thread each time; the 1s debounce plus this terminate flush cover
+        // durability with no per-deactivation cost.
         let nc = NotificationCenter.default
         terminateObserver = nc.addObserver(
             forName: NSApplication.willTerminateNotification,
-            object: nil, queue: nil
-        ) { [weak self] _ in self?.flushSync() }
-        resignActiveObserver = nc.addObserver(
-            forName: NSApplication.willResignActiveNotification,
             object: nil, queue: nil
         ) { [weak self] _ in self?.flushSync() }
     }
 
     deinit {
         if let token = terminateObserver { NotificationCenter.default.removeObserver(token) }
-        if let token = resignActiveObserver { NotificationCenter.default.removeObserver(token) }
     }
 
     /// Drain any in-flight async work so all queued writes finish before we
@@ -76,8 +73,8 @@ class CommandStore {
     private var saveTimer: DispatchSourceTimer?
 
     /// Coalesces the full-file JSON rewrite that used to run on every Enter.
-    /// Safe against quits: the willTerminate/willResignActive observers call
-    /// flushSync(), which drains pending saves synchronously.
+    /// Safe against quits: the willTerminate observer calls flushSync(),
+    /// which drains pending saves synchronously.
     private func scheduleSave(_ commands: [StoredCommand], for directory: String) {
         pendingSaves[directory] = commands
         guard saveTimer == nil else { return }

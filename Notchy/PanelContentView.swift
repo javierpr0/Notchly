@@ -763,7 +763,8 @@ struct PanelContentView: View {
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .opacity(0)
+                    .padding(.horizontal, 24)
+                    .accessibilityLabel(message)
             }
     }
 }

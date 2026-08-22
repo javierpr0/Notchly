@@ -8,10 +8,9 @@ class NotchWindow: NSPanel {
     private var mouseMonitor: Any?
     private var screenObserver: Any?
     private var statusObserver: Any?
-    private var hoverPollTimer: Timer?
     /// Cached result of `NSScreen.builtIn` — resolving it scans every screen and
     /// calls `CGDisplayIsBuiltin` per display, too expensive to redo on every
-    /// mouse-move and every 10Hz proximity tick. Refreshed only when the screen
+    /// mouse-move and every proximity event. Refreshed only when the screen
     /// configuration actually changes (see `observeScreenChanges`).
     private var cachedBuiltInScreen: NSScreen?
     private var currentDisplayLink: CVDisplayLinkWrapper?
@@ -115,7 +114,6 @@ class NotchWindow: NSPanel {
         if let monitor = mouseMonitor {
             NSEvent.removeMonitor(monitor)
         }
-        hoverPollTimer?.invalidate()
         if let observer = screenObserver {
             NotificationCenter.default.removeObserver(observer)
         }
@@ -318,14 +316,14 @@ class NotchWindow: NSPanel {
     // MARK: - Mouse tracking
 
     private func setupTracking() {
-        // Global mouse-moved monitors fire once per pixel of cursor travel —
-        // running them all day, system-wide, just to spot when the cursor
-        // approaches the notch is wasteful. Instead, we watch for cursor
-        // proximity via a low-frequency timer (10Hz when cursor is near the
-        // top of the screen, paused otherwise) plus a tracking area covering
-        // the pill itself for fine-grained inside/outside detection.
+        // Proximity detection is event-driven: a global mouse-moved monitor
+        // does one cheap bounds check per movement event and costs nothing
+        // while the machine is idle. (The previous 10 Hz poll woke the app
+        // ~860k times a day whether or not anyone touched the trackpad.)
+        // Tracking areas still provide fine-grained inside/outside detection
+        // on the pill itself once the cursor is within the window.
         rebuildTrackingArea()
-        startProximityPolling()
+        installProximityMonitor()
     }
 
     private var notchTrackingArea: NSTrackingArea?
@@ -345,17 +343,17 @@ class NotchWindow: NSPanel {
         notchTrackingArea = area
     }
 
-    /// Cheap proximity poll. We only need to react when the cursor is within
-    /// ~120pt of the menu bar; anywhere else, hover state cannot change.
-    private func startProximityPolling() {
-        hoverPollTimer?.invalidate()
-        hoverPollTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+    /// Watches for cursor movement system-wide so hover can trigger even when
+    /// another app is frontmost. Mouse events need no Input Monitoring
+    /// permission, and no events means no wakeups — strictly cheaper than any
+    /// polling cadence. The handler is the same cheap threshold check the old
+    /// timer ran.
+    private func installProximityMonitor() {
+        guard mouseMonitor == nil else { return }
+        mouseMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.mouseMoved, .leftMouseDragged, .otherMouseDragged]
+        ) { [weak self] _ in
             self?.proximityTick()
-        }
-        if let timer = hoverPollTimer {
-            // Let the system coalesce wakeups — hover latency tolerates 50ms.
-            timer.tolerance = 0.05
-            RunLoop.main.add(timer, forMode: .common)
         }
     }
 

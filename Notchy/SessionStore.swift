@@ -118,12 +118,19 @@ class SessionStore {
     /// Tasks whose working phase was shorter than this don't emit a
     /// "task completed" pill/notification — avoids noise from trivial commands.
     private static let minTaskWorkDuration: TimeInterval = 7
+    /// Window a pane must stay idle after working before it is promoted to
+    /// taskCompleted — avoids false positives from brief idle flickers.
+    private static let confirmationDelay: Duration = .seconds(3)
     private static let persistDebounceInterval: TimeInterval = 1.5
 
     private var persistDebounceTask: DispatchWorkItem?
     /// Set once the first successful file write has retired the legacy
     /// UserDefaults blob.
     private var hasMigratedLegacyStore = false
+    /// Pending working→idle confirmation tasks keyed by pane. One per pane,
+    /// cancelled before rescheduling and on pane teardown — rapid status
+    /// flicker must not accumulate detached sleepers.
+    private var completionTransitionTasks: [UUID: Task<Void, Never>] = [:]
 
     init() {
         restoreSessions()
@@ -482,14 +489,37 @@ class SessionStore {
         if status == .idle && oldPaneStatus == .working {
             let sessionId = sessions[index].id
             let workDuration = sessions[index].paneWorkingStartedAt[paneId].map { Date().timeIntervalSince($0) }
-            Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(3))
-                guard let self,
-                      let idx = self.sessions.firstIndex(where: { $0.id == sessionId }),
-                      self.sessions[idx].paneStatuses[paneId] == .idle else { return }
-                if let d = workDuration, d < Self.minTaskWorkDuration { return }
-                self.updateTerminalStatus(paneId, status: .taskCompleted)
-            }
+            scheduleTaskCompletionConfirmation(paneId: paneId, sessionId: sessionId, workDuration: workDuration)
+        }
+    }
+
+    /// Pure gate for firing a "task completed" after the confirmation window:
+    /// the pane must still be idle and the work must not have been trivial.
+    private func scheduleTaskCompletionConfirmation(paneId: UUID, sessionId: UUID, workDuration: TimeInterval?) {
+        completionTransitionTasks[paneId]?.cancel()
+        completionTransitionTasks[paneId] = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.confirmationDelay)
+            guard !Task.isCancelled else { return }
+            guard let self,
+                  let index = self.sessions.firstIndex(where: { $0.id == sessionId }) else { return }
+            let paneStatus = self.sessions[index].paneStatuses[paneId]
+            guard TaskCompletionGate.shouldConfirm(
+                currentPaneStatus: paneStatus,
+                workDuration: workDuration,
+                minimumWorkDuration: Self.minTaskWorkDuration
+            ) else { return }
+            self.completionTransitionTasks[paneId] = nil
+            self.updateTerminalStatus(paneId, status: .taskCompleted)
+        }
+    }
+
+    /// Cancels any pending completion confirmation for every pane of a
+    /// session that is being closed, slept or restarted.
+    private func cancelCompletionTransitions(forSession id: UUID) {
+        guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        for paneId in sessions[index].splitRoot.allPaneIds {
+            completionTransitionTasks[paneId]?.cancel()
+            completionTransitionTasks.removeValue(forKey: paneId)
         }
     }
 
@@ -635,6 +665,7 @@ class SessionStore {
 
     func restartSession(_ id: UUID) {
         guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        cancelCompletionTransitions(forSession: id)
         for paneId in sessions[index].splitRoot.allPaneIds {
             TerminalManager.shared.destroyTerminal(for: paneId)
         }
@@ -652,6 +683,7 @@ class SessionStore {
         guard let index = sessions.firstIndex(where: { $0.id == id }),
               !sessions[index].isSleeping else { return }
 
+        cancelCompletionTransitions(forSession: id)
         for paneId in sessions[index].splitRoot.allPaneIds {
             TerminalManager.shared.destroyTerminal(for: paneId)
         }
@@ -719,6 +751,7 @@ class SessionStore {
     /// Closes a tab. When `discardWorktree` is true and the tab is a worktree,
     /// its git worktree and branch are deleted; otherwise they're left on disk.
     func closeSession(_ id: UUID, discardWorktree: Bool = false) {
+        cancelCompletionTransitions(forSession: id)
         if discardWorktree,
            let s = sessions.first(where: { $0.id == id }),
            let branch = s.worktreeBranch, let root = s.worktreeRepoRoot {

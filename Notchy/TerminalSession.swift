@@ -159,3 +159,16 @@ extension PersistedSession {
         )
     }
 }
+
+/// Pure gate for promoting a working→idle pane to `taskCompleted` once the
+/// confirmation window elapses. Kept side-effect-free so the notification
+/// rules can be asserted directly; `SessionStore` owns the timing.
+enum TaskCompletionGate {
+    static func shouldConfirm(currentPaneStatus: TerminalStatus?,
+                              workDuration: TimeInterval?,
+                              minimumWorkDuration: TimeInterval) -> Bool {
+        guard currentPaneStatus == .idle else { return false }
+        guard let duration = workDuration else { return true }
+        return duration >= minimumWorkDuration
+    }
+}

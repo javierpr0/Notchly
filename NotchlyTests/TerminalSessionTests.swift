@@ -150,4 +150,33 @@ final class TerminalSessionTests: XCTestCase {
         XCTAssertNil(decoded.customCommand)
         XCTAssertNil(TerminalSession(persisted: decoded).customCommand)
     }
+
+    // MARK: - Task completion gate
+
+    /// The pane must still be idle when the confirmation window elapses —
+    /// a pane that resumed working must not fire "task completed".
+    func testGateRequiresThePaneToStillBeIdle() {
+        XCTAssertTrue(TaskCompletionGate.shouldConfirm(
+            currentPaneStatus: .idle, workDuration: 30, minimumWorkDuration: 7))
+        XCTAssertFalse(TaskCompletionGate.shouldConfirm(
+            currentPaneStatus: .working, workDuration: 30, minimumWorkDuration: 7))
+        XCTAssertFalse(TaskCompletionGate.shouldConfirm(
+            currentPaneStatus: .waitingForInput, workDuration: 30, minimumWorkDuration: 7))
+        XCTAssertFalse(TaskCompletionGate.shouldConfirm(
+            currentPaneStatus: nil, workDuration: 30, minimumWorkDuration: 7),
+            "a torn-down pane has no status to confirm")
+    }
+
+    /// Trivial commands (below the minimum duration) stay silent; an unknown
+    /// duration still fires rather than suppressing a real completion.
+    func testGateSuppressesTrivialTasksButFiresOnUnknownDuration() {
+        XCTAssertTrue(TaskCompletionGate.shouldConfirm(
+            currentPaneStatus: .idle, workDuration: nil, minimumWorkDuration: 7))
+        XCTAssertFalse(TaskCompletionGate.shouldConfirm(
+            currentPaneStatus: .idle, workDuration: 2, minimumWorkDuration: 7),
+                       "a 2 s command is noise, not a completed task")
+        XCTAssertEqual(TaskCompletionGate.shouldConfirm(
+            currentPaneStatus: .idle, workDuration: 7, minimumWorkDuration: 7), true,
+                       "exactly at the threshold counts as real work")
+    }
 }

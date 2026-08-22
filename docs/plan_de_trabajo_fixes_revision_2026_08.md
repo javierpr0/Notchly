@@ -43,3 +43,27 @@
 - Suite final: 89 tests, 0 fallos (13 nuevos respecto a los 76 iniciales).
 - App relanzada con todos los cambios; migración de sesiones comprobada en caliente.
 - Commits de esta tanda pendientes de autorización explícita del usuario.
+
+---
+
+# Tanda 2
+
+### Fase 6 - Persistir createdAt
+- [x] `createdAt: Date?` en PersistedSession, mapeado en ambos sentidos (fallback a now solo para payloads legacy)
+- [x] Tests: fecha sobrevive round-trip; payload legacy cae a now
+
+### Fase 7 - Invalidar pantalla cacheada al cambiar displays
+- [x] `cachedBuiltInScreen = nil` en el handler de didChangeScreenParameters
+
+### Fase 8 - Panel del status item en el display correcto
+- [x] showPanel(below:on:) recibe la pantalla del botón; fallback por geometría del rect
+
+### Fase 9 - Revelar panel si el shell falla al arrancar
+- [x] revealAfterFailedSpawn(message:) revela la vista y escribe aviso inline con exit code
+- Nota: fases 7-9 son capa AppKit, fuera del target de tests por diseño
+
+## Revisión tanda 2
+
+- Build Debug: OK tras cada fase.
+- Suite: 89 tests, 0 fallos (aserciones nuevas de createdAt dentro de tests existentes).
+- Commits pendientes de autorización explícita del usuario.

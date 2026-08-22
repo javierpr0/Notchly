@@ -249,13 +249,11 @@ class TerminalPanel: NSPanel {
     }
 
     override func sendEvent(_ event: NSEvent) {
-        let wasKey = isKeyWindow
         super.sendEvent(event)
-        // When the panel wasn't key, the first click just activates the window.
-        // Re-send it so SwiftUI controls (tabs, buttons) process the click too.
-        if !wasKey && event.type == .leftMouseDown {
-            super.sendEvent(event)
-        }
+        // First click on a non-key panel: ClickThroughHostingView overrides
+        // acceptsFirstMouse so the click reaches the SwiftUI controls during
+        // activation itself. (A manual re-dispatch of the same event here ran
+        // it through the whole pipeline twice — double-firing controls.)
         // After any mouseUp, if SwiftUI grabbed firstResponder (or dropped it
         // entirely) and the user isn't in a text field, restore focus to the
         // active terminal. Without this, typing disappears after clicks on

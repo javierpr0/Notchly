@@ -352,6 +352,10 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     }
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
+        // SwiftTerm delivers process output on the main queue by default;
+        // timers, redraw coalescing and alpha writes below all depend on it.
+        // Assert it so a future non-main dispatchQueue fails loudly in debug.
+        dispatchPrecondition(condition: .onQueue(.main))
         super.dataReceived(slice: slice)
 
         guard let id = sessionId else { return }

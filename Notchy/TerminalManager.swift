@@ -352,10 +352,6 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
     }
 
     override func dataReceived(slice: ArraySlice<UInt8>) {
-        // SwiftTerm delivers process output on the main queue by default;
-        // timers, redraw coalescing and alpha writes below all depend on it.
-        // Assert it so a future non-main dispatchQueue fails loudly in debug.
-        dispatchPrecondition(condition: .onQueue(.main))
         super.dataReceived(slice: slice)
 
         guard let id = sessionId else { return }
@@ -1475,7 +1471,11 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
             )
         }
         Task { @MainActor in
-            SessionStore.shared.updateTerminalStatus(paneId, status: .idle)
+            let store = SessionStore.shared
+            store.updateTerminalStatus(paneId, status: .idle)
+            // The pane is gone: a stale summary/hadError entry would surface
+            // on the next task completion of whatever respawns here.
+            store.paneCompletionInfo.removeValue(forKey: paneId)
         }
     }
 

@@ -175,3 +175,29 @@ enum TaskCompletionGate {
         return duration >= minimumWorkDuration
     }
 }
+
+/// Per-owner bookkeeping of overlays that must keep the panel from
+/// auto-hiding on resign-key. Replaces the old shared Bool that
+/// `PanelContentView` and `SessionTabBar` raced on: with independent state
+/// sources, last writer won and one view closing its own dialog hid the
+/// panel while another view's rename field was still open.
+struct DialogVisibilityRegistry: Equatable {
+    private(set) var visibleOwners: Set<String> = []
+
+    var isVisible: Bool { !visibleOwners.isEmpty }
+
+    mutating func setVisible(_ visible: Bool, owner: String) {
+        if visible {
+            visibleOwners.insert(owner)
+        } else {
+            visibleOwners.remove(owner)
+        }
+    }
+
+    /// Drops every owner registered under a prefix — used when whole
+    /// subtrees (e.g. all tabs of a closed session) disappear without
+    /// getting a chance to unregister themselves.
+    mutating func removeAll(ownersWithPrefix prefix: String) {
+        visibleOwners = visibleOwners.filter { !$0.hasPrefix(prefix) }
+    }
+}

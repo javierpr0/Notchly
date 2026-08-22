@@ -157,6 +157,53 @@ final class TerminalSessionTests: XCTestCase {
         XCTAssertNil(TerminalSession(persisted: decoded).customCommand)
     }
 
+    // MARK: - Dialog visibility registry
+
+    /// Panel chrome and individual tabs report independently: one owner
+    /// closing its dialog must not hide the panel while another's is open
+    /// (this used to be a shared Bool, last writer won).
+    func testDialogRegistryComposesConcurrentOwners() {
+        var registry = DialogVisibilityRegistry()
+
+        XCTAssertFalse(registry.isVisible)
+
+        registry.setVisible(true, owner: "panelContent")
+        XCTAssertTrue(registry.isVisible)
+
+        registry.setVisible(true, owner: "tab.1")
+        XCTAssertTrue(registry.isVisible, "second owner opening must keep it visible")
+
+        registry.setVisible(false, owner: "panelContent")
+        XCTAssertTrue(registry.isVisible, "panel closing its dialog must not drop the tab's registration")
+
+        registry.setVisible(false, owner: "tab.1")
+        XCTAssertFalse(registry.isVisible)
+    }
+
+    func testDialogRegistryIsIdempotentPerOwner() {
+        var registry = DialogVisibilityRegistry()
+        registry.setVisible(true, owner: "panelContent")
+        registry.setVisible(true, owner: "panelContent")
+        XCTAssertEqual(registry.visibleOwners.count, 1)
+        registry.setVisible(false, owner: "tab.1")
+        XCTAssertTrue(registry.isVisible, "unregistering an unknown owner must not clear others")
+    }
+
+    /// Closing a session removes its tabs' registrations wholesale — their
+    /// views are gone and will never report false.
+    func testDialogRegistryRemovesOwnersByPrefix() {
+        var registry = DialogVisibilityRegistry()
+        let sessionId = UUID()
+        let otherSessionId = UUID()
+        registry.setVisible(true, owner: "panelContent")
+        registry.setVisible(true, owner: "tab.\(sessionId.uuidString)")
+        registry.setVisible(true, owner: "tab.\(otherSessionId.uuidString)")
+
+        registry.removeAll(ownersWithPrefix: "tab.\(sessionId.uuidString)")
+
+        XCTAssertEqual(registry.visibleOwners, ["panelContent", "tab.\(otherSessionId.uuidString)"])
+    }
+
     // MARK: - Task completion gate
 
     /// The pane must still be idle when the confirmation window elapses —

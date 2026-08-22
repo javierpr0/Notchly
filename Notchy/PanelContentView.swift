@@ -90,7 +90,9 @@ struct PanelContentView: View {
     }
 
     /// Any overlay/dialog that must keep the panel from auto-hiding on
-    /// resign-key (mirrored into SessionStore.isShowingDialog).
+    /// resign-key (reported into SessionStore's dialog registry).
+    private static let dialogOwner = "panelContent"
+
     private var anyDialogVisible: Bool {
         showRestoreConfirmation || showClaudeMenu || showSettings
             || sessionStore.showCommandPalette || sessionStore.filePreview != nil
@@ -369,19 +371,22 @@ struct PanelContentView: View {
             sessionStore.refreshLastCheckpoint()
         }
         .onChange(of: showRestoreConfirmation) {
-            sessionStore.isShowingDialog = anyDialogVisible
+            sessionStore.setDialogVisible(anyDialogVisible, owner: Self.dialogOwner)
         }
         .onChange(of: showClaudeMenu) {
-            sessionStore.isShowingDialog = anyDialogVisible
+            sessionStore.setDialogVisible(anyDialogVisible, owner: Self.dialogOwner)
         }
         .onChange(of: showSettings) {
-            sessionStore.isShowingDialog = anyDialogVisible
+            sessionStore.setDialogVisible(anyDialogVisible, owner: Self.dialogOwner)
         }
         .onChange(of: sessionStore.showCommandPalette) {
-            sessionStore.isShowingDialog = anyDialogVisible
+            sessionStore.setDialogVisible(anyDialogVisible, owner: Self.dialogOwner)
         }
         .onChange(of: sessionStore.filePreview) {
-            sessionStore.isShowingDialog = anyDialogVisible
+            sessionStore.setDialogVisible(anyDialogVisible, owner: Self.dialogOwner)
+        }
+        .onDisappear {
+            sessionStore.setDialogVisible(false, owner: Self.dialogOwner)
         }
         .alert(L10n.shared.restoreCheckpointTitle, isPresented: $showRestoreConfirmation) {
             Button(L10n.shared.restoreLastCheckpoint, role: .destructive) {

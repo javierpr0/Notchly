@@ -74,7 +74,9 @@ class SessionStore {
     }
     var isTerminalExpanded = true
     var isWindowFocused = true
-    var isShowingDialog = false
+    /// True while any overlay that must survive resign-key is open. Derived
+    /// from per-owner registrations — see DialogVisibilityRegistry.
+    var isShowingDialog: Bool { dialogRegistry.isVisible }
     var showCommandPalette = false
     /// Non-nil while the inline file preview overlay is open (⌘-click on a path).
     var filePreview: FilePreviewRequest?
@@ -127,6 +129,20 @@ class SessionStore {
     /// Set once the first successful file write has retired the legacy
     /// UserDefaults blob.
     private var hasMigratedLegacyStore = false
+    /// Overlay owners keeping the panel open across resign-key. Views report
+    /// through `setDialogVisible(_:owner:)` instead of writing a shared Bool.
+    private var dialogRegistry = DialogVisibilityRegistry()
+
+    /// Registers/unregisters an overlay owner and recomputes the aggregate.
+    func setDialogVisible(_ visible: Bool, owner: String) {
+        dialogRegistry.setVisible(visible, owner: owner)
+    }
+
+    /// Drops overlay registrations owned by a closed session's tabs — their
+    /// views are gone and will never report `false`.
+    private func dropDialogOwners(forSession id: UUID) {
+        dialogRegistry.removeAll(ownersWithPrefix: "tab.\(id.uuidString)")
+    }
     /// Pending working→idle confirmation tasks keyed by pane. One per pane,
     /// cancelled before rescheduling and on pane teardown — rapid status
     /// flicker must not accumulate detached sleepers.
@@ -752,6 +768,7 @@ class SessionStore {
     /// its git worktree and branch are deleted; otherwise they're left on disk.
     func closeSession(_ id: UUID, discardWorktree: Bool = false) {
         cancelCompletionTransitions(forSession: id)
+        dropDialogOwners(forSession: id)
         if discardWorktree,
            let s = sessions.first(where: { $0.id == id }),
            let branch = s.worktreeBranch, let root = s.worktreeRepoRoot {

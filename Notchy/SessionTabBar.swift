@@ -198,6 +198,20 @@ struct SessionTab: View {
 
     private var name: String { session.projectName }
 
+    /// Per-tab owner key in the store's dialog registry, so this tab's
+    /// overlays compose with every other tab's and the panel chrome's.
+    private var dialogOwnerId: String { "tab.\(session.id.uuidString)" }
+
+    /// Any tab-local overlay that must keep the panel open on resign-key.
+    private var anyDialogVisible: Bool {
+        isRenaming || showRestoreConfirmation || showSleepOthersConfirmation
+            || showCloseConfirmation || showWorktreeCloseConfirmation
+    }
+
+    private func reportTabDialogs() {
+        SessionStore.shared.setDialogVisible(anyDialogVisible, owner: dialogOwnerId)
+    }
+
     /// Closing destroys the terminal and loses running work. Only nag when the
     /// tab is actually busy; idle tabs close immediately to avoid friction.
     private func requestClose() {
@@ -492,19 +506,22 @@ struct SessionTab: View {
             Text(L10n.shared.closeWorktreeMessage(worktreeBranch ?? ""))
         }
         .onChange(of: isRenaming) {
-            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation || showWorktreeCloseConfirmation
+            reportTabDialogs()
         }
         .onChange(of: showRestoreConfirmation) {
-            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation || showWorktreeCloseConfirmation
+            reportTabDialogs()
         }
         .onChange(of: showSleepOthersConfirmation) {
-            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation || showWorktreeCloseConfirmation
+            reportTabDialogs()
         }
         .onChange(of: showCloseConfirmation) {
-            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation || showWorktreeCloseConfirmation
+            reportTabDialogs()
         }
         .onChange(of: showWorktreeCloseConfirmation) {
-            SessionStore.shared.isShowingDialog = isRenaming || showRestoreConfirmation || showSleepOthersConfirmation || showCloseConfirmation || showWorktreeCloseConfirmation
+            reportTabDialogs()
+        }
+        .onDisappear {
+            SessionStore.shared.setDialogVisible(false, owner: dialogOwnerId)
         }
         .onChange(of: renameFieldFocused) {
             if !renameFieldFocused && isRenaming {

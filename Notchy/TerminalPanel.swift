@@ -133,14 +133,18 @@ class TerminalPanel: NSPanel {
         expandedHeight = frame.height
     }
 
-    func showPanel(below rect: NSRect) {
-        if let screen = NSScreen.main {
-            let panelWidth = frame.width
-            let panelHeight = frame.height
-            let x = Self.clampX(rect.midX - panelWidth / 2, width: panelWidth, in: screen)
-            let y = screen.visibleFrame.maxY - panelHeight
-            setFrameOrigin(NSPoint(x: x, y: y))
-        }
+    /// Positions under `rect` on the screen that owns it. The screen must be
+    /// passed by the caller: `NSScreen.main` tracks the key window, so when
+    /// another app is frontmost it names the wrong display.
+    func showPanel(below rect: NSRect, on ownerScreen: NSScreen?) {
+        guard let screen = ownerScreen ?? NSScreen.screens.first(where: {
+            $0.frame.minX <= rect.midX && rect.midX <= $0.frame.maxX
+        }) ?? NSScreen.main else { return }
+        let panelWidth = frame.width
+        let panelHeight = frame.height
+        let x = Self.clampX(rect.midX - panelWidth / 2, width: panelWidth, in: screen)
+        let y = screen.visibleFrame.maxY - panelHeight
+        setFrameOrigin(NSPoint(x: x, y: y))
         makeKeyAndOrderFront(nil)
         NotificationCenter.default.post(name: .NotchyNotchStatusChanged, object: nil)
         ensureTerminalFocus()

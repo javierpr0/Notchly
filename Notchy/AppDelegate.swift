@@ -457,7 +457,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
            let window = button.window {
             let buttonRect = button.convert(button.bounds, to: nil)
             let screenRect = window.convertToScreen(buttonRect)
-            panel.showPanel(below: screenRect)
+            // The status item's own screen, not whichever display happens to
+            // hold the key window right now.
+            panel.showPanel(below: screenRect, on: window.screen)
         }
     }
 

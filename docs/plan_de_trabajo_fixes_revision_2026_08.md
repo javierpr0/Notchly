@@ -87,3 +87,46 @@
 
 ### Fase 13 - flushSync en cada cmd-tab
 - [x] Eliminado observer willResignActive de CommandStore; queda el flush en willTerminate
+
+---
+
+# Tanda 4
+
+### Fase 14 - Failsafe de revelado del terminal
+- [x] Timer de seguridad (2s) que revela la vista con aviso inline si sigue inicializando sin datos
+
+### Fase 15 - Limpiar paneCompletionInfo al morir el shell
+- [x] processTerminated borra la entrada del panel muerto
+
+### Fase 16 - Precondición de hilo en dataReceived
+- [x] dispatchPrecondition(.main) documenta y blinda el supuesto de cola principal de SwiftTerm
+
+### Fase 17 - Proximidad por eventos en vez de poll
+- [x] Monitor global mouseMoved/leftDragged/otherDragged (sin permisos para eventos de ratón) sustituye al timer de 10 Hz: cero wakeups en reposo
+
+
+---
+
+# Tanda 5 (final de la revisión)
+
+### Fase 18 - Hotkey global configurable y con permisos
+- [x] Preferencia globalBacktickHotkeyEnabled (por defecto activado) + Toggle en Ajustes
+- [x] Preflight CGPreflightListenEventAccess; alerta una vez con acceso directo a Ajustes si falta
+- [x] Documentado en código por qué NO se consume la tecla (un tap consumidor impediría teclear ` en cualquier app)
+- Nota de diseño: el doble efecto (escribir ` + toggle) es inherente a un atajo sin modificador no consumidor
+
+### Fase 19 - Accesibilidad
+- [x] accessibilityLabel en botones solo-icono (ajustes, Claude, nueva terminal, cerrar pestaña, mostrar dormidas, controles de split, worktree)
+- [x] Pill del notch como elemento combinado con etiqueta de estado localizada + updatesFrequently
+- [x] Icono del status item con accessibilityDescription
+
+### Fase 20 - extractPromptInput
+- Descartada tras verificar: getCharacter indexa arrays de SwiftTerm O(1), bucle acotado por cursor.x; no es hot path
+
+### Fase 21 - Poda de almacenes de comandos obsoletos
+- [x] Nuevo StaleFilePruner Foundation-only registrado en target de tests
+- [x] CommandStore poda archivos JSON sin modificar hace 90 dias al arrancar, fuera del hot path
+- [x] Tests (3): deteccion ordenada, prune selectivo, directorio inexistente
+
+## Revisión tanda 5
+- Build OK tras cada estado intermedio; 95 tests en verde.

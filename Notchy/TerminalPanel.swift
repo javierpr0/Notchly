@@ -290,6 +290,16 @@ class TerminalPanel: NSPanel {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // While a real text field has focus (rename field, search box, palette
+        // input), panel shortcuts must not fire over standard text editing:
+        // Cmd+S during a rename used to create a checkpoint mid-typing. Mirror
+        // of shouldRestoreTerminalFocus — SwiftTerm is an NSView, not an
+        // NSText/NSTextView/NSTextField, so terminals are unaffected.
+        let responder = firstResponder
+        if responder is NSText || responder is NSTextView || responder is NSTextField {
+            return super.performKeyEquivalent(with: event)
+        }
+
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let chars = event.charactersIgnoringModifiers ?? ""
 
@@ -319,6 +329,11 @@ class TerminalPanel: NSPanel {
         // Cmd+Opt+Shift+D → split up (current pane stays below)
         if mods == [.command, .option, .shift] && chars == "d" {
             sessionStore.splitFocusedPane(direction: .vertical, placeNewBefore: true)
+            return true
+        }
+        // Cmd+W → close focused pane (Cmd+Shift+W also works)
+        if mods == .command && chars == "w" {
+            sessionStore.closeFocusedPane()
             return true
         }
         // Cmd+Shift+W → close focused pane

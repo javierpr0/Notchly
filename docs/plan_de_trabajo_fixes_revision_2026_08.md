@@ -130,3 +130,20 @@
 
 ## Revisión tanda 5
 - Build OK tras cada estado intermedio; 95 tests en verde.
+
+---
+
+# Tanda 6
+
+### Fase 22 - Prefetch async del CommandStore
+- [x] CommandStore.prefetch(_:): calienta la caché LRU fuera del main thread
+- [x] TerminalManager.setWorkingDirectory lo invoca al cambiar de directorio; el keystroke ya nunca espera disco
+
+### Fase 23 - DisplayLinkAnimator
+- [x] CVDisplayLinkWrapper sustituido por DisplayLinkAnimator reutilizable: handler reemplazable, sin crear un link por animación
+- [x] handler/running protegidos con NSLock (antes Bool sin sincronizar leído desde el hilo del display link)
+- [x] hoverGrow/hoverShrink y positionAtNotch detienen la animación antes de setFrame (fin de la pelea de frames)
+
+### Fase 24 - sendEvent sin doble despacho
+- [x] Eliminado el reenvío manual del mouseDown; se confía en acceptsFirstMouse de ClickThroughHostingView
+- Verificación visual pendiente del usuario: primer clic sobre pestañas/botones cuando el panel no era key

@@ -23,13 +23,15 @@ final class SessionPersistenceTests: XCTestCase {
                 id: UUID(), projectName: "alpha", projectPath: "/alpha",
                 workingDirectory: "/alpha", splitRoot: nil, focusedPaneId: nil,
                 isSleeping: true, notificationsMuted: true,
-                customCommand: "claude --resume", worktreeBranch: "feat", worktreeRepoRoot: "/repo"
+                customCommand: "claude --resume", worktreeBranch: "feat", worktreeRepoRoot: "/repo",
+                createdAt: Date(timeIntervalSince1970: 1_700_000_000)
             ),
             PersistedSession(
                 id: UUID(), projectName: "beta", projectPath: nil,
                 workingDirectory: "/beta", splitRoot: nil, focusedPaneId: nil,
                 isSleeping: nil, notificationsMuted: nil,
-                customCommand: nil, worktreeBranch: nil, worktreeRepoRoot: nil
+                customCommand: nil, worktreeBranch: nil, worktreeRepoRoot: nil,
+                createdAt: nil
             ),
         ]
     }
@@ -65,7 +67,7 @@ final class SessionPersistenceTests: XCTestCase {
         let single = [PersistedSession(
             id: UUID(), projectName: "only", projectPath: nil, workingDirectory: "/x",
             splitRoot: nil, focusedPaneId: nil, isSleeping: nil, notificationsMuted: nil,
-            customCommand: nil, worktreeBranch: nil, worktreeRepoRoot: nil
+            customCommand: nil, worktreeBranch: nil, worktreeRepoRoot: nil, createdAt: nil
         )]
         try SessionPersistence.save(single, activeSessionId: single[0].id, to: fileURL)
 

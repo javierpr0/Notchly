@@ -25,7 +25,7 @@ struct TerminalSession: Identifiable {
     var generation: Int
     /// Whether the user has ever manually selected this tab
     var hasBeenSelected: Bool
-    let createdAt: Date
+    var createdAt: Date
 
     // Split pane support
     var splitRoot: SplitNode
@@ -109,7 +109,8 @@ struct TerminalSession: Identifiable {
         self.hasStarted = false
         self.generation = 0
         self.hasBeenSelected = false
-        self.createdAt = Date()
+        // Fall back to "now" only for payloads written before this field existed.
+        self.createdAt = persisted.createdAt ?? Date()
         self.isSleeping = persisted.isSleeping ?? false
         self.notificationsMuted = persisted.notificationsMuted ?? false
         self.customCommand = persisted.customCommand
@@ -142,6 +143,7 @@ struct PersistedSession: Codable {
     let customCommand: String?
     let worktreeBranch: String?
     let worktreeRepoRoot: String?
+    let createdAt: Date?
 }
 
 extension PersistedSession {
@@ -155,7 +157,8 @@ extension PersistedSession {
             notificationsMuted: s.notificationsMuted ? true : nil,
             customCommand: s.customCommand,
             worktreeBranch: s.worktreeBranch,
-            worktreeRepoRoot: s.worktreeRepoRoot
+            worktreeRepoRoot: s.worktreeRepoRoot,
+            createdAt: s.createdAt
         )
     }
 }

@@ -81,6 +81,7 @@ final class TerminalSessionTests: XCTestCase {
         original.isSleeping = true
         original.notificationsMuted = true
         original.customCommand = "claude --resume"
+        original.createdAt = Date(timeIntervalSince1970: 1_650_000_000)
 
         let persisted = PersistedSession(
             id: original.id,
@@ -93,7 +94,8 @@ final class TerminalSessionTests: XCTestCase {
             notificationsMuted: original.notificationsMuted,
             customCommand: original.customCommand,
             worktreeBranch: nil,
-            worktreeRepoRoot: nil
+            worktreeRepoRoot: nil,
+            createdAt: original.createdAt
         )
         let data = try! JSONEncoder().encode(persisted)
         let decoded = try! JSONDecoder().decode(PersistedSession.self, from: data)
@@ -102,6 +104,8 @@ final class TerminalSessionTests: XCTestCase {
         XCTAssertEqual(restored.id, original.id)
         XCTAssertEqual(restored.splitRoot, original.splitRoot)
         XCTAssertEqual(restored.focusedPaneId, second)
+        XCTAssertEqual(restored.createdAt, original.createdAt,
+                       "creation date must survive a relaunch")
         XCTAssertTrue(restored.isSleeping)
         XCTAssertTrue(restored.notificationsMuted)
         XCTAssertFalse(restored.hasStarted, "a restored tab must start lazily")
@@ -123,6 +127,8 @@ final class TerminalSessionTests: XCTestCase {
         XCTAssertEqual(restored.splitRoot.workingDirectory(for: restored.focusedPaneId), "/legacy")
         XCTAssertFalse(restored.isSleeping)
         XCTAssertFalse(restored.notificationsMuted)
+        XCTAssertLessThan(abs(restored.createdAt.timeIntervalSinceNow), 5,
+                          "legacy payloads without createdAt fall back to now")
     }
 
     /// A tab launched with a custom command (e.g. `claude --resume`) must come

@@ -441,6 +441,8 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         currentWorkingDir = dir
         commandStoreDirectory = dir
         CommandStore.shared.importHistoryIfNeeded(for: dir)
+        // Warm autocomplete before the user types, not during the keystroke.
+        CommandStore.shared.prefetch(dir)
     }
 
     private func ensureGhostView() {

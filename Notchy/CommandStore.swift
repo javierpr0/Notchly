@@ -112,6 +112,17 @@ class CommandStore {
         queue.sync { _commands(for: directory) }
     }
 
+    /// Warms the LRU cache for a directory off the main thread. The
+    /// synchronous `commands(for:)` stays as the fallback, but after a
+    /// prefetch it only ever hits loaded memory — visiting a 33rd directory
+    /// (beyond maxCachedDirectories) no longer blocks a keystroke on disk.
+    func prefetch(_ directory: String) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            _ = self._commands(for: directory)
+        }
+    }
+
     func recordCommand(_ command: String, in directory: String) {
         queue.async { [weak self] in
             guard let self else { return }

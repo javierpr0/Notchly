@@ -639,10 +639,17 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         return false
     }
 
+    /// Right-click hit-testing runs synchronously while the context menu is
+    /// being built, so both buffer scans are bounded — a huge scrollback must
+    /// not stall the main thread for tens of milliseconds finding where a
+    /// block starts or ends.
+    private static let maxPromptScanBack = 1_000
+    private static let maxCommandBlockRows = 2_000
+
     private func findCommandBlock(at absoluteRow: Int) -> CommandBlock? {
         // Scan backward to find the prompt line
         var promptRow: Int? = nil
-        for row in stride(from: absoluteRow, through: max(0, absoluteRow - 5000), by: -1) {
+        for row in stride(from: absoluteRow, through: max(0, absoluteRow - Self.maxPromptScanBack), by: -1) {
             guard let line = readBufferLine(absoluteRow: row) else { break }
             if isPromptLine(line) {
                 promptRow = row
@@ -651,9 +658,12 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         }
         guard let promptRow else { return nil }
 
-        // Scan forward to find the next prompt (or end of buffer)
+        // Scan forward to find the next prompt (or end of buffer), bounded by
+        // both the click position and a maximum block size.
         var endRow = promptRow
-        for row in (promptRow + 1)...(absoluteRow + 5000) {
+        let forwardLimit = min(absoluteRow + Self.maxPromptScanBack,
+                               promptRow + Self.maxCommandBlockRows)
+        for row in (promptRow + 1)...forwardLimit {
             guard let line = readBufferLine(absoluteRow: row) else {
                 endRow = row - 1
                 break

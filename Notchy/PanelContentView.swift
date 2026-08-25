@@ -65,6 +65,7 @@ struct PanelContentView: View {
     var onToggleExpand: (() -> Void)?
     @State private var showRestoreConfirmation = false
     @State private var showClaudeMenu = false
+    @State private var showOpenCodeMenu = false
     @State private var claudeUseChrome = false
     @State private var claudeSkipPermissions = false
     @State private var selectedThemeId = TerminalManager.shared.currentThemeId
@@ -98,7 +99,7 @@ struct PanelContentView: View {
     private static let dialogOwner = "panelContent"
 
     private var anyDialogVisible: Bool {
-        showRestoreConfirmation || showClaudeMenu || showSettings
+        showRestoreConfirmation || showClaudeMenu || showOpenCodeMenu || showSettings
             || sessionStore.showCommandPalette || sessionStore.filePreview != nil
     }
 
@@ -174,6 +175,19 @@ struct PanelContentView: View {
                 .accessibilityLabel(L10n.shared.launchClaude)
                 .popover(isPresented: $showClaudeMenu, arrowEdge: .bottom) {
                     claudeMenuContent
+                }
+
+                Button(action: { showOpenCodeMenu.toggle() }) {
+                    Image(systemName: "chevron.left.forwardslash.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: 14, height: 14)
+                        .dsChromeButton(isActive: showOpenCodeMenu)
+                }
+                .buttonStyle(.plain)
+                .help(L10n.shared.launchOpenCode)
+                .accessibilityLabel(L10n.shared.launchOpenCode)
+                .popover(isPresented: $showOpenCodeMenu, arrowEdge: .bottom) {
+                    openCodeMenuContent
                 }
 
                 Button(action: { sessionStore.createQuickSession() }) {
@@ -383,6 +397,9 @@ struct PanelContentView: View {
         .onChange(of: showClaudeMenu) {
             sessionStore.setDialogVisible(anyDialogVisible, owner: Self.dialogOwner)
         }
+        .onChange(of: showOpenCodeMenu) {
+            sessionStore.setDialogVisible(anyDialogVisible, owner: Self.dialogOwner)
+        }
         .onChange(of: showSettings) {
             sessionStore.setDialogVisible(anyDialogVisible, owner: Self.dialogOwner)
         }
@@ -429,6 +446,31 @@ struct PanelContentView: View {
             TerminalManager.shared.sendCommand(to: paneId, command: cmd)
         }
         showClaudeMenu = false
+    }
+
+    /// Mirrors the Claude menu: sends the launch command into the focused
+    /// pane's shell rather than spawning a new tab. opencode has no CLI flag
+    /// for an interactive resume picker, so the menu offers new + continue.
+    private func launchOpenCode(continueLast: Bool) {
+        let cmd = continueLast ? "opencode --continue" : "opencode"
+        if let paneId = sessionStore.activeSession?.focusedPaneId {
+            TerminalManager.shared.sendCommand(to: paneId, command: cmd)
+        }
+        showOpenCodeMenu = false
+    }
+
+    @ViewBuilder
+    private var openCodeMenuContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            claudeMenuItem(title: L10n.shared.newSessionTitle, subtitle: L10n.shared.startFresh, icon: "plus.circle.fill", color: .green) {
+                launchOpenCode(continueLast: false)
+            }
+            claudeMenuItem(title: L10n.shared.continueTitle, subtitle: L10n.shared.continueLastSession, icon: "arrow.right.circle.fill", color: .blue) {
+                launchOpenCode(continueLast: true)
+            }
+        }
+        .padding(.vertical, 8)
+        .frame(width: 220)
     }
 
     @ViewBuilder

@@ -163,4 +163,91 @@ final class TerminalStatusClassifierTests: XCTestCase {
         XCTAssertTrue(TerminalStatusClassifier.looksLikeClaudeCode(lines: ["  Esc to cancel"]))
         XCTAssertFalse(TerminalStatusClassifier.looksLikeClaudeCode(lines: ["user@mac ~ %", "$ ls"]))
     }
+
+    // MARK: - opencode
+
+    /// opencode paints its busy line as `<braille frame> <label>`; frames and
+    /// labels come from `packages/tui/src/component/spinner.tsx` and the
+    /// tool display titles of the TUI (v1.18.x).
+    func testOpenCodeSpinnerWithKnownLabelMeansWorking() {
+        let rows = ["⠹ Thinking", "", "Ask anything... \"plan the work\""]
+        XCTAssertEqual(TerminalStatusClassifier.evaluate(tailLines: rows).status, .working)
+    }
+
+    func testOpenCodeToolLabelsMeanWorking() {
+        for line in ["⠸ Edit src/main.ts", "⠼ Shell command", "⠦ Grep \"pattern\"", "⠏ Thinking: refactor auth"] {
+            XCTAssertTrue(TerminalStatusClassifier.hasOpenCodeSpinnerLine(line), "\(line) should read as busy")
+        }
+    }
+
+    func testBareBrailleWithoutOpencodeLabelIsNotWorking() {
+        // A README or a yarn progress bar can paint braille; without one of
+        // opencode's own labels that must stay idle.
+        XCTAssertEqual(TerminalStatusClassifier.evaluate(tailLines: ["⠋ Loading assets..."]).status, .idle)
+        XCTAssertFalse(TerminalStatusClassifier.hasOpenCodeSpinnerLine("⠋ random output"))
+        XCTAssertFalse(TerminalStatusClassifier.hasOpenCodeSpinnerLine("⠹Thinking"))
+    }
+
+    func testOpenCodePermissionDialogMeansWaitingForInput() {
+        let rows = [
+            "  Permission required",
+            "  ❯ Allow once   Allow always   Reject"
+        ]
+        XCTAssertEqual(TerminalStatusClassifier.evaluate(tailLines: rows).status, .waitingForInput)
+    }
+
+    func testAllowOnceAndRejectTogetherMeansWaitingEvenWithoutHeader() {
+        let rows = ["  Allow once", "  Allow always", "  Reject"]
+        XCTAssertEqual(TerminalStatusClassifier.evaluate(tailLines: rows).status, .waitingForInput)
+    }
+
+    func testOpenCodeInterruptedMarkerIsRecognised() {
+        let rows = ["You said something · interrupted", "Ask anything... \"tip\""]
+        XCTAssertEqual(TerminalStatusClassifier.evaluate(tailLines: rows).status, .interrupted)
+    }
+
+    func testIdleOpenCodeScreenIsIdle() {
+        let rows = ["Done with the task.", "Ask anything... \"tip\""]
+        XCTAssertEqual(TerminalStatusClassifier.evaluate(tailLines: rows).status, .idle)
+    }
+
+    func testOpenCodeQuestionDialogMeansWaitingForInput() {
+        let rows = [
+            "  Which database should we use?",
+            "  ❯ Postgres",
+            "    SQLite",
+            "  ↑↓ select   enter submit   esc dismiss"
+        ]
+        XCTAssertEqual(TerminalStatusClassifier.evaluate(tailLines: rows).status, .waitingForInput)
+    }
+
+    func testQuestionFooterNeedsBothTheEscapeAndAnActionHint() {
+        XCTAssertTrue(TerminalStatusClassifier.hasOpenCodeQuestionFooter("enter confirm  esc dismiss"))
+        XCTAssertTrue(TerminalStatusClassifier.hasOpenCodeQuestionFooter("↑↓ select   enter toggle   esc dismiss"))
+        XCTAssertFalse(TerminalStatusClassifier.hasOpenCodeQuestionFooter("esc dismiss"))
+        XCTAssertFalse(TerminalStatusClassifier.hasOpenCodeQuestionFooter("press esc to dismiss the panel"))
+    }
+
+    func testSummaryStopsBeforeOpenCodePromptTip() {
+        let reading = TerminalStatusClassifier.evaluate(tailLines: [
+            "Migrated the auth module to the new API.",
+            "All tests pass.",
+            "Ask anything... \"plan the refactor\""
+        ])
+        XCTAssertEqual(reading.status, .idle)
+        XCTAssertEqual(reading.summary, "All tests pass.")
+    }
+
+    func testOpenCodeIsDetectedFromPlaceholderOrDialog() {
+        XCTAssertTrue(TerminalStatusClassifier.looksLikeOpenCode(lines: ["Ask anything... \"tip\""]))
+        XCTAssertTrue(TerminalStatusClassifier.looksLikeOpenCode(lines: ["Permission required"]))
+        XCTAssertTrue(TerminalStatusClassifier.looksLikeOpenCode(lines: ["⠹ Thinking"]))
+        XCTAssertFalse(TerminalStatusClassifier.looksLikeOpenCode(lines: ["user@mac ~ %"]))
+    }
+
+    func testAgentCLIDetectionCoversBothTools() {
+        XCTAssertTrue(TerminalStatusClassifier.looksLikeAgentCLI(lines: ["\u{276F} "]))
+        XCTAssertTrue(TerminalStatusClassifier.looksLikeAgentCLI(lines: ["Ask anything... \"tip\""]))
+        XCTAssertFalse(TerminalStatusClassifier.looksLikeAgentCLI(lines: ["$ ls"]))
+    }
 }

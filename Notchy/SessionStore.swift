@@ -559,7 +559,7 @@ class SessionStore {
         if anyWorking && sleepActivity == nil {
             sleepActivity = ProcessInfo.processInfo.beginActivity(
                 options: [.idleSystemSleepDisabled, .suddenTerminationDisabled],
-                reason: "Claude is working"
+                reason: "Agent CLI working"
             )
         } else if !anyWorking, let activity = sleepActivity {
             ProcessInfo.processInfo.endActivity(activity)

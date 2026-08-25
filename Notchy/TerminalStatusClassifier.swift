@@ -14,6 +14,31 @@ enum TerminalStatusClassifier {
     static let separator = "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}"
 
     private static let spinnerCharacters: Set<Character> = ["·", "✢", "✳", "✶", "✻", "✽"]
+
+    /// opencode's TUI animates its busy indicator with these braille frames
+    /// (`packages/tui/src/component/spinner.tsx`). Unlike Claude's spinner
+    /// glyphs they are plain braille, so a bare frame is not enough: the text
+    /// after it must match a known opencode label.
+    private static let openCodeSpinnerFrames: Set<Character> = [
+        "\u{280B}", "\u{2819}", "\u{2839}", "\u{2838}", "\u{283C}",
+        "\u{2834}", "\u{2826}", "\u{2827}", "\u{2807}", "\u{280F}"
+    ]
+    /// Labels the TUI renders right after the spinner while a turn or tool
+    /// runs ("Thinking", "Thinking: <task>", and the tool display titles from
+    /// `routes/session/permission.tsx` / `session/index.tsx`).
+    private static let openCodeSpinnerLabels: [String] = [
+        "Thinking",
+        "Shell command",
+        "Edit ",
+        "Read ",
+        "Glob \"",
+        "Grep \"",
+        "List ",
+        "Task",
+        "WebFetch ",
+        "Access external directory",
+        "Call tool "
+    ]
     private static let errorPatterns: [String] = ["error:", "failed", "permission denied"]
     private static let errorSymbols: Set<Character> = ["\u{2717}", "\u{2718}"]
 
@@ -69,7 +94,24 @@ enum TerminalStatusClassifier {
             return .working
         }
         if fullText.contains("Esc to cancel") { return .waitingForInput }
-        if visibleText.contains("Interrupted") { return .interrupted }
+        // opencode TUI markers (v1.18.x): the permission dialog offers
+        // Allow once / Allow always / Reject under a "Permission required"
+        // header; an aborted turn leaves "· interrupted" on the message.
+        if hasOpenCodeSpinnerLine(visibleText) {
+            return .working
+        }
+        if fullText.contains("Permission required")
+            || (fullText.contains("Allow once") && fullText.contains("Reject")) {
+            return .waitingForInput
+        }
+        // The question dialog's footer is its only stable on-screen copy:
+        // `esc dismiss` always renders next to one of the action hints.
+        if hasOpenCodeQuestionFooter(fullText) {
+            return .waitingForInput
+        }
+        if visibleText.contains("Interrupted") || visibleText.contains("· interrupted") {
+            return .interrupted
+        }
         return .idle
     }
 
@@ -84,10 +126,42 @@ enum TerminalStatusClassifier {
         }
     }
 
+    /// An opencode busy line looks like `⠹ Thinking` or `⠸ Edit src/foo.ts`:
+    /// braille frame, space, then one of the labels its TUI uses while a turn
+    /// or tool is running. The label check keeps static braille content in
+    /// scrollback (READMEs, dotfiles) from reading as eternal activity.
+    static func hasOpenCodeSpinnerLine(_ text: String) -> Bool {
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        return lines.contains { line in
+            guard let first = line.first, openCodeSpinnerFrames.contains(first) else { return false }
+            guard line.dropFirst().first == " " else { return false }
+            let rest = String(line.dropFirst(2))
+            return openCodeSpinnerLabels.contains { rest.hasPrefix($0) }
+        }
+    }
+
+    /// opencode's question dialog paints a key-hint footer with fixed copy:
+    /// `esc dismiss` plus `↑↓ select` / `enter submit` / `enter toggle` /
+    /// `enter confirm`, depending on the question shape. Requiring both parts
+    /// keeps stray output containing just one of the words idle.
+    static func hasOpenCodeQuestionFooter(_ text: String) -> Bool {
+        guard text.contains("esc dismiss") else { return false }
+        return text.contains("↑↓ select")
+            || text.contains("enter submit")
+            || text.contains("enter toggle")
+            || text.contains("enter confirm")
+    }
+
     static func extractSummary(from text: String) -> String? {
-        let lines = text.components(separatedBy: "\n")
+        var lines = text.components(separatedBy: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && !$0.hasPrefix(separator) }
+        // opencode's idle editor paints a rotating "Ask anything…" tip at the
+        // prompt; everything from there down is chrome, not the answer. The
+        // summary is the agent's last output above it.
+        if let promptStart = lines.firstIndex(where: { $0.contains("Ask anything") }) {
+            lines = Array(lines.prefix(promptStart))
+        }
         guard let last = lines.last else { return nil }
         // Notifications display whatever appeared on the last visible line,
         // which is attacker-controllable (any program in the terminal can emit
@@ -117,5 +191,23 @@ enum TerminalStatusClassifier {
             if trimmed.contains("Esc to cancel") || trimmed.contains("esc to interrupt") { return true }
         }
         return false
+    }
+
+    /// Same idea for the opencode TUI: its idle editor placeholder and the
+    /// permission dialog only ever render while opencode owns the screen.
+    /// Dropped files use `@path` mentions in both TUIs.
+    static func looksLikeOpenCode(lines: [String]) -> Bool {
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("Ask anything") || trimmed.contains("Ask anything...") { return true }
+            if trimmed.contains("Permission required") { return true }
+            if hasOpenCodeSpinnerLine(trimmed) { return true }
+        }
+        return false
+    }
+
+    /// True when either supported agent CLI owns the pane.
+    static func looksLikeAgentCLI(lines: [String]) -> Bool {
+        looksLikeClaudeCode(lines: lines) || looksLikeOpenCode(lines: lines)
     }
 }

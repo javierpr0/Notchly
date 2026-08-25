@@ -52,6 +52,8 @@ final class L10n {
     var pinPanelOpen: String { isSpanish ? "Anclar panel" : "Pin panel open" }
     var settings: String { isSpanish ? "Ajustes" : "Settings" }
     var launchClaude: String { isSpanish ? "Iniciar Claude" : "Launch Claude" }
+    var launchOpenCode: String { isSpanish ? "Iniciar opencode" : "Launch opencode" }
+    var continueLastSession: String { isSpanish ? "Continuar última sesión" : "Continue last session" }
     var newTerminal: String { isSpanish ? "Nueva terminal" : "New terminal" }
 
     var restoreLastCheckpoint: String { isSpanish ? "Restaurar último punto" : "Restore last checkpoint" }

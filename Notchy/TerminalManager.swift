@@ -288,7 +288,9 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         // shell/Claude prompt — a filename may legally contain newline/CR/ESC
         // on APFS, none of which quoting or space-escaping contains.
         let safePaths = items.map { ShellSafety.stripControlCharacters($0.path) }
-        if isRunningClaudeCode() {
+        // Both supported agent TUIs accept `@path` mentions; a bare shell
+        // gets plain quoted paths instead.
+        if isAgentCLIOnScreen() {
             let paths = safePaths.map { "@" + $0.replacingOccurrences(of: " ", with: "\\ ") }.joined(separator: " ")
             send(txt: paths)
         } else {
@@ -298,11 +300,11 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
         return true
     }
 
-    private func isRunningClaudeCode() -> Bool {
+    private func isAgentCLIOnScreen() -> Bool {
         let terminal = getTerminal()
         let startRow = max(0, terminal.rows - 5)
         let rows = (startRow..<terminal.rows).map { readRow($0, in: terminal) }
-        return TerminalStatusClassifier.looksLikeClaudeCode(lines: rows)
+        return TerminalStatusClassifier.looksLikeAgentCLI(lines: rows)
     }
 
     /// Status detection only inspects content near the bottom of the buffer
@@ -1291,25 +1293,34 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         } else if let cmd = configCommand {
             terminal.send(txt: "cd \(escapedDir) && clear && \(cmd)\r")
         } else {
-            sendClaudeLaunch(to: terminal, escapedDir: escapedDir, workingDirectory: workingDirectory, launchClaude: launchClaude)
+            sendAgentLaunch(to: terminal, escapedDir: escapedDir, workingDirectory: workingDirectory, launchClaude: launchClaude)
         }
     }
 
-    /// Decides whether to append `&& claude` based on CLAUDE.md presence, but
-    /// runs the filesystem probe OFF the main thread — a stat on a slow or
-    /// unresponsive volume (asleep external drive, wedged network mount) would
-    /// otherwise stall tab open for seconds. The single combined command is
-    /// sent once resolved; the shell buffers stdin until it is ready, so the
-    /// extra hop is invisible.
-    private func sendClaudeLaunch(to terminal: ClickThroughTerminalView, escapedDir: String, workingDirectory: String, launchClaude: Bool) {
+    /// Decides whether to append `&& claude` / `&& opencode` based on the
+    /// project's marker files (CLAUDE.md, AGENTS.md), but runs the filesystem
+    /// probes OFF the main thread — a stat on a slow or unresponsive volume
+    /// (asleep external drive, wedged network mount) would otherwise stall
+    /// tab open for seconds. The single combined command is sent once
+    /// resolved; the shell buffers stdin until it is ready, so the extra hop
+    /// is invisible.
+    private func sendAgentLaunch(to terminal: ClickThroughTerminalView, escapedDir: String, workingDirectory: String, launchClaude: Bool) {
         guard launchClaude else {
             terminal.send(txt: "cd \(escapedDir) && clear\r")
             return
         }
-        let claudePath = (workingDirectory as NSString).appendingPathComponent("CLAUDE.md")
+        let claudeMd = (workingDirectory as NSString).appendingPathComponent("CLAUDE.md")
+        let agentsMd = (workingDirectory as NSString).appendingPathComponent("AGENTS.md")
         DispatchQueue.global(qos: .userInitiated).async {
-            let hasClaude = FileManager.default.fileExists(atPath: claudePath)
-            let cmd = hasClaude ? "cd \(escapedDir) && clear && claude\r" : "cd \(escapedDir) && clear\r"
+            let target = AgentLaunchPolicy.resolve(
+                hasClaudeMd: FileManager.default.fileExists(atPath: claudeMd),
+                hasAgentsMd: FileManager.default.fileExists(atPath: agentsMd)
+            )
+            let cmd: String
+            switch target.launchCommand {
+            case let cli?: cmd = "cd \(escapedDir) && clear && \(cli)\r"
+            case nil: cmd = "cd \(escapedDir) && clear\r"
+            }
             DispatchQueue.main.async { terminal.send(txt: cmd) }
         }
     }

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftTerm
+import os
 
 struct PaneCompletionInfo {
     let summary: String
@@ -393,13 +394,19 @@ class ClickThroughTerminalView: LocalProcessTerminalView {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
                 guard let self else { return }
                 self.pendingRedrawFlush = false
-                guard let window = self.window, self.alphaValue > 0 else { return }
+                let window = self.window
                 // The forced full repaint exists because AppKit defers
-                // SwiftTerm's partial invalidation in a non-key panel until the
-                // next event, leaving typed text invisible until a click. A key
-                // window flushes those dirty rects on its own, so there the
-                // full-view repaint is pure overhead on every 30 ms of output.
-                guard !window.isKeyWindow else { return }
+                // SwiftTerm's partial invalidation in a non-key panel until
+                // the next event, leaving typed text invisible until a click.
+                // With the panel hidden (background sessions still streaming)
+                // painting would be pure offscreen waste; dirty marks survive
+                // and the show path repaints current state once.
+                guard PaneRepaintPolicy.shouldPaint(
+                    windowExists: window != nil,
+                    windowIsKey: window?.isKeyWindow ?? false,
+                    windowIsVisible: window?.isVisible ?? false,
+                    paneRevealed: self.alphaValue > 0
+                ) else { return }
                 self.needsDisplay = true
                 self.displayIfNeeded()
             }
@@ -1070,6 +1077,11 @@ private extension String {
 class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
     static let shared = TerminalManager()
 
+    /// Signposts for the terminal open path. Capture with Instruments
+    /// (template "os_signpost") or:
+    /// `log show --last 5m --predicate 'subsystem == "com.emac.notchly" AND category == "terminalOpen"'`
+    private static let signposter = OSSignposter(subsystem: "com.emac.notchly", category: "terminalOpen")
+
     private static let fontSizeKey = "terminalFontSize"
     private static let fontNameKey = "terminalFontName"
     private static let themeKey = "terminalTheme"
@@ -1177,22 +1189,27 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
 
     private(set) var terminals: [UUID: LocalProcessTerminalView] = [:]
 
-    /// A pre-spawned terminal sitting at the user's default shell prompt in
+    /// Pre-spawned terminals sitting at the user's default shell prompt in
     /// $HOME. When the user opens a new tab whose `.notchy.json` does not
-    /// override the shell, we hand off this warm terminal and just send
+    /// override the shell, we hand off a warm terminal and just send
     /// `cd <dir> && clear …` — skipping the ~100–500 ms fork + exec + shell
-    /// startup. A fresh warm is queued after each claim so consecutive opens
-    /// stay fast.
-    private var warmTerminal: ClickThroughTerminalView?
-    /// Coalesces multiple `prepareWarmTerminal()` requests issued in the same
-    /// runloop tick (e.g. after a burst of session restores) so we don't spawn
-    /// extra shells.
-    private var warmSpawnScheduled = false
+    /// startup (measured at ~1.1 s with this machine's .zshrc). The pool is
+    /// refilled one shell per fill tick after each claim, so bursts of
+    /// consecutive opens stay on the warm path.
+    private var warmPool: [ClickThroughTerminalView] = []
+    /// Coalesces refill scheduling: at most one deferred fill tick pending.
+    private var warmFillScheduled = false
+    /// Delay before each pool-fill spawn so it doesn't compete with the
+    /// foreground spawn that just happened for CPU and main-thread time.
+    private static let warmFillDelay: TimeInterval = 0.25
 
     func terminal(for sessionId: UUID, workingDirectory: String, launchClaude: Bool = true, customCommand: String? = nil) -> LocalProcessTerminalView {
         if let existing = terminals[sessionId] {
             return existing
         }
+
+        let openState = Self.signposter.beginInterval("OpenTerminal", id: Self.signposter.makeSignpostID())
+        defer { Self.signposter.endInterval("OpenTerminal", openState) }
 
         // Trust gate first: a `.notchy.json` from an untrusted project produces
         // a nil config (the user is prompted modally on the main thread).
@@ -1217,9 +1234,11 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
             configCommand: config?.command,
             env: config?.env
         ) {
+            Self.signposter.emitEvent("Path.warmClaim")
             return warm
         }
 
+        Self.signposter.emitEvent("Path.coldSpawn")
         let terminal = ClickThroughTerminalView(frame: NSRect(x: 0, y: 0, width: 720, height: 460))
         terminal.sessionId = sessionId
         terminal.processDelegate = self
@@ -1310,16 +1329,9 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         // shell after the fact — environment is established at process exec.
         // Skip the warm path in that case so the user actually gets their env.
         guard env == nil || env?.isEmpty == true else { return nil }
-        guard let warm = warmTerminal else { return nil }
-        warmTerminal = nil
-
-        // Don't hand off a warm terminal whose shell already died (e.g. a login
-        // script that exits). Returning nil falls through to a cold spawn, which
-        // re-arms the pool.
-        guard warm.process?.running == true else {
-            warm.removeFromSuperview()
-            return nil
-        }
+        purgeDeadWarmTerminals()
+        guard let warmIndex = WarmPoolPolicy.claimIndex(aliveFlags: warmPool.map { $0.process?.running == true }) else { return nil }
+        let warm = warmPool.remove(at: warmIndex)
 
         warm.sessionId = sessionId
         warm.processDelegate = self
@@ -1346,25 +1358,37 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
         return warm
     }
 
-    /// Spawn a single idle terminal in $HOME with the default shell so the
-    /// next `terminal(for:)` call that doesn't need a custom shell can skip
-    /// the fork + exec cost. No-op if a warm terminal already exists.
+    /// Spawn idle terminals in $HOME with the default shell (up to
+    /// `WarmPoolPolicy.capacity`) so the next `terminal(for:)` call that
+    /// doesn't need a custom shell can skip the fork + exec cost. Fills at
+    /// most one shell per tick, chained until capacity is reached.
     func prepareWarmTerminal() {
-        guard warmTerminal == nil, !warmSpawnScheduled else { return }
-        warmSpawnScheduled = true
-        // Defer slightly so we don't compete with the foreground spawn that
-        // just happened for CPU and main-thread time. 250 ms is long enough
-        // for the visible terminal to finish initialization but short enough
-        // that a rapid second open still benefits.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+        scheduleWarmFill()
+    }
+
+    private func scheduleWarmFill() {
+        guard !warmFillScheduled,
+              WarmPoolPolicy.deficit(liveCount: warmPool.count, inFlight: 0) > 0 else { return }
+        warmFillScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.warmFillDelay) { [weak self] in
             guard let self else { return }
-            self.warmSpawnScheduled = false
-            guard self.warmTerminal == nil else { return }
-            self.spawnWarmTerminalNow()
+            self.warmFillScheduled = false
+            self.spawnOneWarmIfNeeded()
+            // Chain remaining fills one per tick so concurrent forks don't
+            // fight each other or the foreground spawn for CPU.
+            self.scheduleWarmFill()
         }
     }
 
-    private func spawnWarmTerminalNow() {
+    private func spawnOneWarmIfNeeded() {
+        purgeDeadWarmTerminals()
+        guard WarmPoolPolicy.deficit(liveCount: warmPool.count, inFlight: 0) > 0 else { return }
+        warmPool.append(makeWarmTerminal())
+    }
+
+    private func makeWarmTerminal() -> ClickThroughTerminalView {
+        let fillState = Self.signposter.beginInterval("WarmFill", id: Self.signposter.makeSignpostID())
+        defer { Self.signposter.endInterval("WarmFill", fillState) }
         let home = NSHomeDirectory()
         let terminal = ClickThroughTerminalView(frame: NSRect(x: 0, y: 0, width: 720, height: 460))
         terminal.processDelegate = self
@@ -1383,7 +1407,17 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
             execName: "-" + (shell as NSString).lastPathComponent
         )
         terminal.beginInitialization()
-        warmTerminal = terminal
+        return terminal
+    }
+
+    /// Drops pool entries whose shell already exited so claims never hand off
+    /// a dead terminal and deficits are computed against live shells only.
+    private func purgeDeadWarmTerminals() {
+        let aliveFlags = warmPool.map { $0.process?.running == true }
+        for index in WarmPoolPolicy.deadIndices(aliveFlags: aliveFlags).reversed() {
+            let dead = warmPool.remove(at: index)
+            dead.removeFromSuperview()
+        }
     }
 
     // MARK: - LocalProcessTerminalViewDelegate
@@ -1456,11 +1490,11 @@ class TerminalManager: NSObject, LocalProcessTerminalViewDelegate {
     func processTerminated(source: TerminalView, exitCode: Int32?) {
         guard let view = source as? ClickThroughTerminalView else { return }
 
-        // The unclaimed warm terminal's shell died (e.g. a failing login
+        // A pooled warm terminal's shell died (e.g. a failing login
         // script). Drop it; the pool re-arms on the next spawn. Don't re-warm
         // here — a shell that always exits would spin.
-        if view === warmTerminal {
-            warmTerminal = nil
+        if let poolIndex = warmPool.firstIndex(where: { $0 === view }) {
+            warmPool.remove(at: poolIndex)
             view.removeFromSuperview()
             return
         }

@@ -17,6 +17,7 @@
 		BE0000160000000000000016 /* AutocompleteRanker.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0000060000000000000006 /* AutocompleteRanker.swift */; };
 		BE0000170000000000000017 /* SessionPersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0000070000000000000007 /* SessionPersistence.swift */; };
 		BE0000180000000000000018 /* StaleFilePruner.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0000080000000000000008 /* StaleFilePruner.swift */; };
+		BE0000190000000000000019 /* WarmPoolPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE0000090000000000000009 /* WarmPoolPolicy.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -29,6 +30,7 @@
 		BE0000060000000000000006 /* AutocompleteRanker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AutocompleteRanker.swift; path = Notchy/AutocompleteRanker.swift; sourceTree = SOURCE_ROOT; };
 		BE0000070000000000000007 /* SessionPersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SessionPersistence.swift; path = Notchy/SessionPersistence.swift; sourceTree = SOURCE_ROOT; };
 		BE0000080000000000000008 /* StaleFilePruner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = StaleFilePruner.swift; path = Notchy/StaleFilePruner.swift; sourceTree = SOURCE_ROOT; };
+		BE0000090000000000000009 /* WarmPoolPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WarmPoolPolicy.swift; path = Notchy/WarmPoolPolicy.swift; sourceTree = SOURCE_ROOT; };
 		BE00000A000000000000000A /* NotchlyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NotchlyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -101,6 +103,7 @@
 				BE0000060000000000000006 /* AutocompleteRanker.swift */,
 				BE0000070000000000000007 /* SessionPersistence.swift */,
 				BE0000080000000000000008 /* StaleFilePruner.swift */,
+				BE0000090000000000000009 /* WarmPoolPolicy.swift */,
 			);
 			name = "Tested Sources";
 			sourceTree = "<group>";
@@ -223,6 +226,7 @@
 				BE0000160000000000000016 /* AutocompleteRanker.swift in Sources */,
 				BE0000170000000000000017 /* SessionPersistence.swift in Sources */,
 				BE0000180000000000000018 /* StaleFilePruner.swift in Sources */,
+				BE0000190000000000000019 /* WarmPoolPolicy.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

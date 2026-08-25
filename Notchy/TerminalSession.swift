@@ -201,3 +201,18 @@ struct DialogVisibilityRegistry: Equatable {
         visibleOwners = visibleOwners.filter { !$0.hasPrefix(prefix) }
     }
 }
+
+/// Decides whether the coalesced output flush of a terminal pane should
+/// force a full repaint. Kept pure so the repaint rules can be asserted
+/// directly; `ClickThroughTerminalView` owns the timers.
+enum PaneRepaintPolicy {
+    static func shouldPaint(windowExists: Bool,
+                            windowIsKey: Bool,
+                            windowIsVisible: Bool,
+                            paneRevealed: Bool) -> Bool {
+        guard windowExists, windowIsVisible, paneRevealed else { return false }
+        // A key window flushes dirty rects on its own; the forced full-view
+        // repaint there is pure overhead on every 30 ms of output.
+        return !windowIsKey
+    }
+}
